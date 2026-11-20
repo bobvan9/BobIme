@@ -110,7 +110,9 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
   再用 Inno Setup 编 `installer/BobIme.iss`，产物在 `artifacts\installer\`。
   Inno 没自带简体中文语言包，`.iss` 里以英文 `Default.isl` 为底覆写了几条看得见的
   `[Messages]`，所以这个脚本**必须带 UTF-8 BOM**，否则中文按 GBK 解读就花了。
-- 现在是 `PrivilegesRequired=lowest` 的按用户安装：不弹 UAC，开机自启写当前用户的 `Run` 项。
+- 现在是 `PrivilegesRequired=admin` 的全用户安装，默认目录 `C:\Program Files\BobIme`（要写系统目录，
+  所以安装和升级都会弹一次 UAC）；开机自启写 HKLM 的 `Run` 项，对所有登录用户生效。
+  安装时会顺手删掉早先按用户安装留下的 HKCU `Run` 项，免得登录后拉起两份进程挂两个钩子。
 
 ## 为什么不走系统输入法（TSF）
 

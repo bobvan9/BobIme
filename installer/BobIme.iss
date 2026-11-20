@@ -12,9 +12,11 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-; 钩子型输入法不需要管理员，按当前用户安装就不会出现 UAC，Run 项也写得明明白白。
-PrivilegesRequired=lowest
-DefaultDirName={autopf}\BobIme
+; 装到公共 Program Files 就得写系统目录，这里按全用户安装提权，UAC 会弹一次。
+PrivilegesRequired=admin
+; [Registry] 里清残留 HKCU Run 项是故意的（提权用的还是同一个账户的 HKCU），所以关掉这条通用告警。
+UsedUserAreasWarning=no
+DefaultDirName={commonpf}\BobIme
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 AllowNoIcons=yes
@@ -65,9 +67,12 @@ Name: "{group}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"; Tasks: desktopicon
 
 [Registry]
-; 钩子型输入法不需要管理员权限，开机自启写在当前用户的 Run 项就够。
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
+; 全用户安装就写 HKLM 的 Run 项，登录后对所有用户都生效；HKLM64 是 Windows 实际读的那一份视图。
+Root: HKLM64; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
   ValueName: "BobIme"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue; Tasks: autostart
+; 1.0.0 之前是按用户安装的，残留的 HKCU Run 项会在登录后多拉一份，导致两个钩子同时挂上，这里清掉。
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; \
+  ValueName: "BobIme"; Flags: deletevalue
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "立即运行 {#MyAppName}"; Flags: nowait postinstall skipifsilent
