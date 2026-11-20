@@ -46,6 +46,12 @@ public sealed class ImeController
 
     public ImeController(ImeEngine engine) => _engine = engine;
 
+    /// <summary>
+    /// 按键分发的依据。设置界面保存后整个换掉，下一次按键就走新键位；
+    /// 每页候选数在 <see cref="ImeEngine"/> 上，不在这里。
+    /// </summary>
+    public AppSettings Settings { get; set; } = new();
+
     public bool Enabled { get; set; } = true;
 
     /// <summary>中文模式；左 Shift 单敲切换，英文模式下按键一律原样放行。</summary>
@@ -82,6 +88,13 @@ public sealed class ImeController
 
     public bool IsComposing => _engine.IsComposing;
 
+    /// <summary>每页候选数，设置界面改的就是这一项；数字键选词最多到 9，引擎自己夹。</summary>
+    public int PageSize
+    {
+        get => _engine.PageSize;
+        set => _engine.PageSize = value;
+    }
+
     public string Buffer => _engine.Buffer;
 
     public IReadOnlyList<Candidate> Candidates => _engine.Candidates;
@@ -99,8 +112,10 @@ public sealed class ImeController
 
     public KeyDecision OnKeyDown(KeyEvent key)
     {
+        var settings = Settings;
+
         // 开关判断要抢在 Enabled 检查前面，否则关掉之后就再也接不到这个键。
-        if (key.Ctrl && key.Vk == VirtualKey.Space)
+        if (settings.EnabledToggle.Matches(key.Vk, key.Ctrl, key.Alt, key.Shift))
         {
             Enabled = !Enabled;
             _engine.Clear();
@@ -112,10 +127,24 @@ public sealed class ImeController
             return KeyDecision.Passthrough;
         }
 
+        // 单敲形态的中英切换由钩子在抬起时判，走 ToggleChineseMode；这里只管组合键形态。
+        if (settings.EnglishToggle.Matches(key.Vk, key.Ctrl, key.Alt, key.Shift))
+        {
+            SetChineseMode(!ChineseMode);
+            return new KeyDecision(true, null, false);
+        }
+
         // 英文模式：一个键都不吃，全交回目标程序。
         if (!ChineseMode)
         {
             return KeyDecision.Passthrough;
+        }
+
+        // 标点档只管换键，不清当前编码，也不碰总开关；英文模式下一个键都不吃，所以排在它后面。
+        if (settings.PunctuationToggle.Matches(key.Vk, key.Ctrl, key.Alt, key.Shift))
+        {
+            ChinesePunctuation = !ChinesePunctuation;
+            return new KeyDecision(true, null, false);
         }
 
         // Ctrl/Alt 组合既不参与组码，也不该顺手把候选上屏：编码留着，原样放行。
@@ -146,8 +175,8 @@ public sealed class ImeController
             >= VirtualKey.NumPad0 and <= VirtualKey.NumPad9 => OnDigit((int)(key.Vk - VirtualKey.NumPad0)),
             VirtualKey.Back => OnBackspace(),
             VirtualKey.Escape => OnEscape(),
-            VirtualKey.OemOpenBrackets => OnPage(false),
-            VirtualKey.OemCloseBrackets => OnPage(true),
+            _ when key.Vk == settings.PageKeys.Prev() => OnPage(false),
+            _ when key.Vk == settings.PageKeys.Next() => OnPage(true),
             _ => OnOtherKey(),
         };
     }

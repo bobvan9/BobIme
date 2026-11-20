@@ -15,15 +15,30 @@ internal sealed class LowLevelKeyboardHook : IDisposable
     private readonly HashSet<uint> _swallowed = [];
     private nint _handle;
     private bool _reentrant;
-    private bool _shiftTapArmed;
+    private uint _tapKey;
+    private bool _tapArmed;
 
     public LowLevelKeyboardHook() => _proc = Proc;
 
     /// <summary>返回 true 表示该键被吞下，不再传给目标程序。</summary>
     public required Func<KeyEvent, bool> OnKeyDown { get; init; }
 
-    /// <summary>左 Shift 单敲（按住期间没碰过别的键）抬起时回调，用来切中/英。</summary>
-    public Action? OnShiftTap { get; init; }
+    /// <summary>单敲判定要等抬起，所以单独给一条回调，用来切中/英。</summary>
+    public Action? OnTap { get; init; }
+
+    /// <summary>要监听单敲的修饰键 VK；置 0 就不监听。设置界面里改。</summary>
+    public uint TapKey
+    {
+        get => _tapKey;
+        set
+        {
+            _tapKey = value;
+            _tapArmed = false;
+        }
+    }
+
+    /// <summary>设置界面开着时全放行：不然按键录入框要接的那个键先被钩子吞了。</summary>
+    public bool Suspended { get; set; }
 
     public void Install()
     {
@@ -59,9 +74,9 @@ internal sealed class LowLevelKeyboardHook : IDisposable
         var isUp = message is Native.WM_KEYUP or Native.WM_SYSKEYUP;
 
         // 注入事件照常送给目标程序，否则我们自己上屏的字符会被这道闸门吃掉。
-        if ((raw.flags & Native.LLKHF_INJECTED) == 0)
+        if ((raw.flags & Native.LLKHF_INJECTED) == 0 && !Suspended)
         {
-            TrackShiftTap(raw.vkCode, isDown, isUp);
+            TrackTap(raw.vkCode, isDown, isUp);
 
             if (isDown && IsModifier(raw.vkCode))
             {
@@ -104,23 +119,28 @@ internal sealed class LowLevelKeyboardHook : IDisposable
         return Native.CallNextHookEx(_handle, nCode, wParam, lParam);
     }
 
-    // 判定「单敲」要等抬起：按住左 Shift 期间碰过任何一个别的键，就不算单敲。
+    // 判定「单敲」要等抬起：按住那个修饰键期间碰过任何一个别的键，就不算单敲。
     // 这段跑在钩子回调里，只能记账和投递，不许干活。
-    private void TrackShiftTap(uint vk, bool isDown, bool isUp)
+    private void TrackTap(uint vk, bool isDown, bool isUp)
     {
+        if (_tapKey == 0)
+        {
+            return;
+        }
+
         if (isDown)
         {
-            _shiftTapArmed = vk == Native.VK_LSHIFT;
+            _tapArmed = vk == _tapKey;
             return;
         }
 
-        if (!isUp || vk != Native.VK_LSHIFT || !_shiftTapArmed)
+        if (!isUp || vk != _tapKey || !_tapArmed)
         {
             return;
         }
 
-        _shiftTapArmed = false;
-        OnShiftTap?.Invoke();
+        _tapArmed = false;
+        OnTap?.Invoke();
     }
 
     private static readonly uint[] CtrlVks = [Native.VK_CONTROL, 0xA2, 0xA3];

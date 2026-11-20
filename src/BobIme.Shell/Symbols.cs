@@ -1,12 +1,18 @@
 namespace BobIme.Shell;
 
-/// <summary>符号面板的分组数据。每组控制在四行以内，面板不滚动也不分页。</summary>
+/// <summary>符号面板的分组数据。每组控制在面板行数以内，面板不滚动也不分页。</summary>
 internal static class Symbols
 {
     internal readonly record struct Group(string Name, string[] Items);
 
     internal static readonly Group[] Groups =
     [
+        new("工程",
+        [
+            "⌀", "φ", "Φ", "∅", "±", "∓", "°", "′", "″", "‴", "∠", "⌒", "∥", "⊥", "≌", "∽",
+            "⏤", "▱", "○", "◎", "⊙", "⊕", "⊘", "△", "▽", "□", "◇", "⌴", "⌵", "⌖", "↗", "⇗",
+            "㎜", "㎝", "㎛", "μ", "Å", "㎫", "㎬", "℃", "‰", "≒", "≈", "≤", "≥", "√",
+        ]),
         new("标点",
         [
             "，", "。", "、", "；", "？", "！", "：", "…", "—", "～", "·", "‘", "’", "“", "”",

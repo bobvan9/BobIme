@@ -4,7 +4,7 @@ using BobIme.Shell.Interop;
 namespace BobIme.Shell;
 
 /// <summary>托盘菜单里四选一的输入档。英文档就是中文模式关掉，另三档决定挂哪本码表。</summary>
-internal enum InputMode
+public enum InputMode
 {
     English,
     Wubi,
@@ -29,15 +29,22 @@ internal sealed class ImeApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem[] _punctItems;
     private readonly ToolStripMenuItem[] _modeItems;
     private readonly ImeController _controller;
+    private AppSettings _settings;
     private SymbolForm? _symbols;
+    private SettingsForm? _settingsForm;
     private readonly Icon _iconChinese;
     private readonly Icon _iconEnglish;
     private readonly bool _hasPinyin;
     private string _trayText = "";
 
-    public ImeApplicationContext(IReadOnlyList<CodeTable> tables)
+    public ImeApplicationContext(IReadOnlyList<CodeTable> tables, AppSettings settings)
     {
-        _controller = new ImeController(new ImeEngine(tables) { PageSize = 9 });
+        _settings = settings.Normalized();
+        _controller = new ImeController(new ImeEngine(tables))
+        {
+            Settings = _settings,
+            PageSize = _settings.PageSize,
+        };
         _candidates = new CandidateForm();
         _candidates.PageRequested += next =>
         {
@@ -51,11 +58,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
         _ = _candidates.Handle;
 
         _hasPinyin = tables.Any(t => t.Source == CandidateSource.Pinyin);
-        if (!_hasPinyin)
-        {
-            // 没挂拼音码表时停在五笔档，免得圆点落在一个灰掉的菜单项上。
-            _controller.ActiveSource = CandidateSource.Wubi;
-        }
+        _controller.ChinesePunctuation = _settings.ChinesePunctuation;
 
         _menu = new ContextMenuStrip();
         _menu.Items.Add(new ToolStripMenuItem("符号输入", null, (_, _) => ShowSymbols()));
@@ -65,6 +68,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
             ModeItem("拼音输入", InputMode.Pinyin), ModeItem("混合输入", InputMode.Mixed)];
         _menu.Items.AddRange([.. _punctItems, new ToolStripSeparator(), .. _modeItems]);
         _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add(new ToolStripMenuItem("设置…", null, (_, _) => ShowSettings()));
         _menu.Items.Add(new ToolStripMenuItem("说明", null, (_, _) => TrayDialogs.ShowUsage()));
         _menu.Items.Add(new ToolStripMenuItem("关于", null, (_, _) => TrayDialogs.ShowAbout()));
         _menu.Items.Add(new ToolStripSeparator());
@@ -80,10 +84,33 @@ internal sealed class ImeApplicationContext : ApplicationContext
             ContextMenuStrip = _menu,
             Visible = true,
         };
+        _tray.MouseDoubleClick += (_, _) =>
+        {
+            if (_settings.TrayDoubleClickOpensSymbols)
+            {
+                ShowSymbols();
+            }
+        };
 
-        _hook = new LowLevelKeyboardHook { OnKeyDown = OnKeyDown, OnShiftTap = OnShiftTap };
+        // 启动档要在菜单和托盘都建好之后再挑，SyncStatus 才有东西可以点亮。
+        ApplyStartupMode(_settings.StartupMode);
+
+        _hook = new LowLevelKeyboardHook { OnKeyDown = OnKeyDown, OnTap = OnTapKey };
+        _hook.TapKey = TapKeyOf(_settings.EnglishToggle);
         _hook.Install();
         SyncStatus();
+    }
+
+    /// <summary>单敲形态才有监听键，组合键形态在 <see cref="ImeController"/> 里判。</summary>
+    private static uint TapKeyOf(KeyBinding binding) => binding.IsTap ? binding.Vk : 0;
+
+    /// <summary>
+    /// 启动档只决定开机那一下：没挂拼音码表时拼音档和混输档都退回纯五笔，
+    /// 免得圆点落在一个灰掉的菜单项上。
+    /// </summary>
+    private void ApplyStartupMode(InputMode mode)
+    {
+        SetMode(!_hasPinyin && mode is InputMode.Pinyin or InputMode.Mixed ? InputMode.Wubi : mode);
     }
 
     private ToolStripMenuItem PunctItem(string label, bool chinese)
@@ -174,7 +201,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
         return File.Exists(path) ? new Icon(path, SystemInformation.SmallIconSize) : null;
     }
 
-    private void OnShiftTap()
+    private void OnTapKey()
     {
         var decision = _controller.ToggleChineseMode();
         Post(() => Apply(decision));
@@ -226,7 +253,61 @@ internal sealed class ImeApplicationContext : ApplicationContext
     {
         _candidates.HideComposition();
         _symbols ??= new SymbolForm();
-        _symbols.ShowAtCaret();
+        _symbols.ShowAt(_settings.SymbolPanelPlacement);
+    }
+
+    /// <summary>
+    /// 设置界面开着时钩子整个放行：按键录入框要接的那个键不能先被钩子吞掉，
+    /// 而且这时候在设置框里打字也不该出候选窗。
+    /// </summary>
+    private void ShowSettings()
+    {
+        if (_settingsForm is not null)
+        {
+            _settingsForm.Activate();
+            return;
+        }
+
+        _candidates.HideComposition();
+        _symbols?.Hide();
+        _hook.Suspended = true;
+        try
+        {
+            using var dialog = new SettingsForm(_settings, _hasPinyin);
+            _settingsForm = dialog;
+            if (dialog.ShowDialog() != DialogResult.OK)
+            {
+                return;
+            }
+
+            _settings = dialog.Settings;
+            try
+            {
+                _settings.Save();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"设置没能写入 {AppSettings.FilePath}：{ex.Message}\n本次改动只在当前这次运行里有效。",
+                    "Bob 五笔");
+            }
+
+            ApplySettings();
+        }
+        finally
+        {
+            _settingsForm = null;
+            _hook.Suspended = false;
+        }
+    }
+
+    /// <summary>不当场生效的只有启动档位和启动标点档，其余立刻接上。</summary>
+    private void ApplySettings()
+    {
+        _controller.Settings = _settings;
+        _controller.PageSize = _settings.PageSize;
+        _hook.TapKey = TapKeyOf(_settings.EnglishToggle);
+        SyncStatus();
     }
 
     private void SyncStatus()
@@ -311,7 +392,7 @@ internal static class Program
             }
 
             ApplicationConfiguration.Initialize();
-            Application.Run(new ImeApplicationContext(tables));
+            Application.Run(new ImeApplicationContext(tables, AppSettings.Load()));
             return 0;
         }
         catch (Exception ex)

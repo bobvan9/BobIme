@@ -7,14 +7,14 @@ namespace BobIme.Shell;
 /// </summary>
 internal sealed class SymbolForm : FloatingForm
 {
-    private const int Inset = 8;
-    private const int HeaderHeight = 28;
-    private const int TabHeight = 24;
-    private const int CellWidth = 34;
-    private const int CellHeight = 30;
-    private const int Columns = 12;
-    private const int CloseWidth = 28;
-    private const int TabPad = 14;
+    private const int Inset = 12;
+    private const int HeaderHeight = 34;
+    private const int TabHeight = 30;
+    private const int CellWidth = 46;
+    private const int CellHeight = 44;
+    private const int Columns = 16;
+    private const int CloseWidth = 34;
+    private const int TabPad = 18;
     private static readonly Size MaxMeasure = new(4000, 4000);
 
     private static readonly Color PanelColor = Color.FromArgb(0xF9, 0xF9, 0xF9);
@@ -25,8 +25,8 @@ internal sealed class SymbolForm : FloatingForm
     private static readonly Color TabColor = Color.FromArgb(0x6E, 0x76, 0x81);
     private static readonly Color SelectedTabColor = Color.White;
 
-    private readonly Font _headFont = new("Microsoft YaHei UI", 10f);
-    private readonly Font _symbolFont = new("Microsoft YaHei UI", 13f);
+    private readonly Font _headFont = new("Microsoft YaHei UI", 11f);
+    private readonly Font _symbolFont = new("Microsoft YaHei UI", 18f);
     private readonly List<(Rectangle Bounds, string Text)> _cells = [];
     private readonly List<(Rectangle Bounds, int Index)> _tabs = [];
     private Rectangle _titleHot = Rectangle.Empty;
@@ -44,11 +44,13 @@ internal sealed class SymbolForm : FloatingForm
         DoubleBuffered = true;
     }
 
-    /// <summary>贴着光标放；已经在屏幕上就只挪位置，不抢焦点也不关掉重开。</summary>
-    public void ShowAtCaret()
+    /// <summary>按设置摆位置；已经在屏幕上就只挪位置，不抢焦点也不关掉重开。</summary>
+    public void ShowAt(PanelPlacement placement)
     {
         RebuildLayout();
-        var position = CaretLocator.Locate(ClientSize, Handle);
+        var position = placement == PanelPlacement.Caret
+            ? CaretLocator.Locate(ClientSize, Handle)
+            : CaretLocator.Center(ClientSize);
         Native.SetWindowPos(
             Handle, Native.HWND_TOPMOST, position.X, position.Y, 0, 0, Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
         Show();
@@ -61,11 +63,13 @@ internal sealed class SymbolForm : FloatingForm
         _tabs.Clear();
 
         // 分组标签一行排不下就折行，窗宽取最宽的一行和候选网格里更大的那个。
+        // 行数取各组里最多的那个：换分组时窗口尺寸不变，免得面板跟着挪位。
         var gridWidth = Columns * CellWidth;
         var x = Inset;
         var y = HeaderHeight;
         var rowWidth = 0;
         var widest = 0;
+        var rows = 0;
         for (var i = 0; i < Symbols.Groups.Length; i++)
         {
             var width = TextRenderer.MeasureText(
@@ -81,12 +85,12 @@ internal sealed class SymbolForm : FloatingForm
             _tabs.Add((new Rectangle(x, y, width, TabHeight), i));
             x += width;
             rowWidth = x - Inset;
+            rows = Math.Max(rows, (Symbols.Groups[i].Items.Length + Columns - 1) / Columns);
         }
 
         widest = Math.Max(widest, rowWidth);
         var gridTop = y + TabHeight;
         var items = Symbols.Groups[_group].Items;
-        var rows = (items.Length + Columns - 1) / Columns;
         ClientSize = new Size(Math.Max(gridWidth, widest) + Inset * 2, gridTop + rows * CellHeight + Inset);
         _closeHot = new Rectangle(ClientSize.Width - CloseWidth, 0, CloseWidth, HeaderHeight);
         _titleHot = new Rectangle(Inset, 0, ClientSize.Width - CloseWidth - Inset, HeaderHeight);

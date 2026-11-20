@@ -32,6 +32,16 @@ internal static class CaretLocator
         return position;
     }
 
+    /// <summary>摆在任务栏之外的工作区正中间，给符号面板这种不跟光标的浮窗用。</summary>
+    public static Point Center(Size windowSize)
+    {
+        var work = WorkArea();
+        return Clamp(
+            new Point(work.Left + (work.Width - windowSize.Width) / 2, work.Top + (work.Height - windowSize.Height) / 2),
+            windowSize,
+            work);
+    }
+
     private static Point Anchor(Rectangle work)
     {
         if (TryCaret(out var caret))

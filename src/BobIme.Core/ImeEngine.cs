@@ -20,6 +20,7 @@ public sealed class ImeEngine
     private List<Candidate> _matches = [];
     private IReadOnlyList<Candidate> _candidates = [];
     private int _pageIndex;
+    private int _pageSize = 9;
 
     public ImeEngine(CodeTable table) : this([table])
     {
@@ -56,8 +57,25 @@ public sealed class ImeEngine
         }
     }
 
-    /// <summary>一次交给候选窗显示的词条数。</summary>
-    public int PageSize { get; init; } = 9;
+    /// <summary>
+    /// 一次交给候选窗显示的词条数。候选靠 1–9 数字键选，所以上限就是 9；
+    /// 改档位时当前页夹回可用范围，免得停在一页不存在的位置上。
+    /// </summary>
+    public int PageSize
+    {
+        get => _pageSize;
+        set
+        {
+            var size = Math.Clamp(value, 1, 9);
+            if (size == _pageSize)
+            {
+                return;
+            }
+
+            _pageSize = size;
+            ShowPage(_matches.Count == 0 ? 0 : Math.Min(_pageIndex, Pages - 1));
+        }
+    }
 
     public string Buffer => _buffer;
 
