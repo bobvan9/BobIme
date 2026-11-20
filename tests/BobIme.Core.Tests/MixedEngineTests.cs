@@ -111,6 +111,86 @@ public class MixedEngineTests
         Assert.Equal("可", controller.OnKeyDown(Key(VirtualKey.D0 + 4)).CommitText);
     }
 
+    [Fact]
+    public void EachPageKeepsTheWubiAndPinyinSplit()
+    {
+        var wubi = new CodeTable([.. Enumerable.Range(0, 12).Select(i => new Candidate($"五{i}", "n", i + 1))]);
+        var pinyin = new CodeTable(
+            [.. Enumerable.Range(0, 12).Select(i => new Candidate($"拼{i}", "n", i + 1, 1000 - i, CandidateSource.Pinyin))],
+            CodeTableFormat.Pinyin);
+        var engine = new ImeEngine([wubi, pinyin]) { PageSize = 9 };
+        engine.Press('n');
+
+        // 翻页不能把配比翻没：每页还是五笔 5 条、拼音 4 条，各表接着上次的次序往下取。
+        Assert.Equal(3, engine.Pages);
+        Assert.Equal(["五0", "五1", "五2", "五3", "五4", "拼0", "拼1", "拼2", "拼3"], Texts(engine));
+
+        Assert.True(engine.NextPage());
+        Assert.Equal(["五5", "五6", "五7", "五8", "五9", "拼4", "拼5", "拼6", "拼7"], Texts(engine));
+
+        Assert.True(engine.NextPage());
+        Assert.Equal(["五10", "五11", "拼8", "拼9", "拼10", "拼11"], Texts(engine));
+    }
+
+    [Fact]
+    public void ActiveSource_WubiOnlyDropsThePinyinRun()
+    {
+        var engine = Engine();
+        engine.ActiveSource = CandidateSource.Wubi;
+        engine.Press('k');
+
+        Assert.Equal(["中", "口", "咽下"], engine.Candidates.Select(c => c.Text));
+        Assert.All(engine.Candidates, c => Assert.Equal(CandidateSource.Wubi, c.Source));
+    }
+
+    [Fact]
+    public void ActiveSource_PinyinOnlyDropsTheWubiRun()
+    {
+        var engine = Engine();
+        engine.ActiveSource = CandidateSource.Pinyin;
+        engine.Press('k');
+
+        Assert.Equal(["可"], engine.Candidates.Select(c => c.Text));
+    }
+
+    [Fact]
+    public void ActiveSource_PinyinOnlyKeepsTheLongCodes()
+    {
+        var engine = Engine();
+        engine.ActiveSource = CandidateSource.Pinyin;
+        foreach (var letter in "zhongguo")
+        {
+            engine.Press(letter);
+        }
+
+        // 码长上限跟着挂上的表走：纯拼音时八位连写照样是编码，纯五笔四位就顶满了。
+        Assert.Equal("zhongguo", engine.Buffer);
+        Assert.Equal(["中国", "种过"], engine.Candidates.Select(c => c.Text));
+    }
+
+    [Fact]
+    public void ActiveSource_ChangeDropsTheHalfTypedCode()
+    {
+        var engine = Engine();
+        engine.Press('k');
+
+        engine.ActiveSource = CandidateSource.Pinyin;
+
+        Assert.False(engine.IsComposing);
+        Assert.Empty(engine.Candidates);
+    }
+
+    [Fact]
+    public void ActiveSource_OnControllerSwitchesWhatSpacePicks()
+    {
+        var controller = new ImeController(Engine()) { ActiveSource = CandidateSource.Pinyin };
+        controller.OnKeyDown(Letter('k'));
+
+        Assert.Equal("可", controller.OnKeyDown(Key(VirtualKey.Space)).CommitText);
+    }
+
+    private static IEnumerable<string> Texts(ImeEngine engine) => engine.Candidates.Select(c => c.Text);
+
     private static uint LetterVk(char letter) => (uint)(VirtualKey.A + char.ToUpperInvariant(letter) - 'A');
 
     private static KeyEvent Letter(char letter) => Key(LetterVk(letter));

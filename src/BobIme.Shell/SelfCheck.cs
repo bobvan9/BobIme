@@ -74,7 +74,7 @@ internal static class SelfCheck
 
         using var form = new CandidateForm();
         _ = form.Handle;
-        form.ShowComposition("k", candidates);
+        form.ShowComposition("k", candidates, engine.Page, engine.Pages);
         Console.WriteLine($"候选窗 {form.Width}x{form.Height} @ ({form.Location.X},{form.Location.Y})");
         form.HideComposition();
 

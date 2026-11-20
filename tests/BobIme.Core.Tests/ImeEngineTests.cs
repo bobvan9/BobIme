@@ -169,6 +169,119 @@ public class ImeEngineTests
     }
 
     [Fact]
+    public void NextPageAndPrevPage_WalkTheCachedPages()
+    {
+        var engine = ManyPerCode();
+        engine.Press('a');
+
+        Assert.Equal(1, engine.Page);
+        Assert.Equal(3, engine.Pages);
+
+        Assert.True(engine.NextPage());
+        Assert.Equal(2, engine.Page);
+        Assert.Equal(
+            ["一9", "一10", "一11", "二0", "二1", "二2", "二3", "二4", "二5"],
+            engine.Candidates.Select(c => c.Text));
+
+        Assert.True(engine.NextPage());
+        Assert.Equal(["二6", "二7", "二8", "二9", "二10", "二11"], engine.Candidates.Select(c => c.Text));
+
+        // 最后一页待着不动，页码不许越过边界。
+        Assert.False(engine.NextPage());
+        Assert.Equal(3, engine.Page);
+
+        Assert.True(engine.PrevPage());
+        Assert.True(engine.PrevPage());
+        Assert.False(engine.PrevPage());
+        Assert.Equal(1, engine.Page);
+    }
+
+    [Fact]
+    public void Press_ResetsToFirstPage()
+    {
+        var engine = ManyPerCode();
+        engine.Press('a');
+        engine.NextPage();
+
+        engine.Press('b');
+
+        Assert.Equal("ab", engine.Buffer);
+        Assert.Equal(1, engine.Page);
+        Assert.Equal("二0", engine.Candidates[0].Text);
+    }
+
+    [Fact]
+    public void PressBackspace_ResetsToFirstPage()
+    {
+        var engine = ManyPerCode();
+        engine.Press('a');
+        engine.Press('b');
+        Assert.True(engine.NextPage());
+
+        engine.PressBackspace();
+
+        Assert.Equal("a", engine.Buffer);
+        Assert.Equal(1, engine.Page);
+        Assert.Equal("一0", engine.Candidates[0].Text);
+    }
+
+    [Fact]
+    public void SelectAt_IndexesTheCurrentPage()
+    {
+        var engine = ManyPerCode();
+        engine.Press('a');
+        engine.NextPage();
+
+        // 数字键跟着当前页走：第二页第 1 位就是整表的第 10 条。
+        Assert.Equal("一9", engine.SelectAt(0).Text);
+    }
+
+    [Fact]
+    public void Paging_WithoutCompositionDoesNothing()
+    {
+        var engine = ManyPerCode();
+
+        Assert.False(engine.NextPage());
+        Assert.False(engine.PrevPage());
+        Assert.Equal(1, engine.Page);
+    }
+
+    [Fact]
+    public void Query_CachesOnlyFivePages()
+    {
+        var engine = new ImeEngine(TestDict.Table) { PageSize = 9 };
+        engine.Press('k');
+
+        // k 这个前缀在词库里能命中上千条，一次只留五页，翻到第五页就到头。
+        Assert.Equal(5, engine.Pages);
+        Assert.True(engine.NextPage());
+        Assert.True(engine.NextPage());
+        Assert.True(engine.NextPage());
+        Assert.True(engine.NextPage());
+        Assert.Equal(9, engine.Candidates.Count);
+        Assert.False(engine.NextPage());
+    }
+
+    [Fact]
     public void Press_NonCodeKeyIsIgnored() =>
         Assert.Equal(KeyStatus.Ignored, new ImeEngine(TestDict.Table).Press('1').Status);
+
+    [Fact]
+    public void ActiveSource_WithNoTableOfThatKindComposesNothing()
+    {
+        var engine = new ImeEngine(TestDict.Table) { ActiveSource = CandidateSource.Pinyin };
+
+        // 只挂了五笔表却选了拼音档：一套码表都不剩，一个键也组不起来。
+        Assert.Equal(KeyStatus.NoMatch, engine.Press('k').Status);
+        Assert.False(engine.IsComposing);
+    }
+
+    /// <summary>一码和二码各挂 12 条，PageSize 9 时正好跨三页。</summary>
+    private static ImeEngine ManyPerCode() => new(
+        new CodeTable(
+        [
+            .. Enumerable.Range(0, 12).Select(i => new Candidate($"一{i}", "a", i + 1)),
+            .. Enumerable.Range(0, 12).Select(i => new Candidate($"二{i}", "ab", i + 13)),
+        ]))
+    { PageSize = 9 };
 }

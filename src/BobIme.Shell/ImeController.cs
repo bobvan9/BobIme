@@ -15,6 +15,8 @@ public static class VirtualKey
     public const uint D9 = 0x39;
     public const uint NumPad0 = 0x60;
     public const uint NumPad9 = 0x69;
+    public const uint OemOpenBrackets = 0xDB;
+    public const uint OemCloseBrackets = 0xDD;
 }
 
 /// <summary>一次按键的处置结果。<see cref="Composing"/> 决定候选窗此刻该不该显示。</summary>
@@ -37,6 +39,13 @@ public sealed class ImeController
     /// <summary>中文模式；左 Shift 单敲切换，英文模式下按键一律原样放行。</summary>
     public bool ChineseMode { get; private set; } = true;
 
+    /// <summary>挂哪一类码表：五笔、拼音，<c>null</c> 是混输。换档会丢掉手上的半截编码。</summary>
+    public CandidateSource? ActiveSource
+    {
+        get => _engine.ActiveSource;
+        set => _engine.ActiveSource = value;
+    }
+
     /// <summary>切中/英。输入法整个停用着的时候这个键不归我们管，所以不切。</summary>
     public KeyDecision ToggleChineseMode()
     {
@@ -56,6 +65,14 @@ public sealed class ImeController
     public string Buffer => _engine.Buffer;
 
     public IReadOnlyList<Candidate> Candidates => _engine.Candidates;
+
+    /// <summary>当前页码，从 1 开始，给候选窗标页码用。</summary>
+    public int Page => _engine.Page;
+
+    public int Pages => _engine.Pages;
+
+    /// <summary>候选窗上的箭头走的就是 <c>[</c> / <c>]</c> 那条路，只是不经过按键。</summary>
+    public bool TurnPage(bool next) => IsComposing && (next ? _engine.NextPage() : _engine.PrevPage());
 
     /// <summary>丢掉当前编码，不产出任何文本。</summary>
     public void Reset() => _engine.Clear();
@@ -97,6 +114,8 @@ public sealed class ImeController
             >= VirtualKey.NumPad0 and <= VirtualKey.NumPad9 => OnDigit((int)(key.Vk - VirtualKey.NumPad0)),
             VirtualKey.Back => OnBackspace(),
             VirtualKey.Escape => OnEscape(),
+            VirtualKey.OemOpenBrackets => OnPage(false),
+            VirtualKey.OemCloseBrackets => OnPage(true),
             _ => OnOtherKey(),
         };
     }
@@ -157,6 +176,19 @@ public sealed class ImeController
 
         _engine.Clear();
         return new KeyDecision(true, null, false);
+    }
+
+    private KeyDecision OnPage(bool next)
+    {
+        if (!IsComposing)
+        {
+            return KeyDecision.Passthrough;
+        }
+
+        // 翻不动（已经在第一页或最后一页）也照样吞掉：放行的话会走「其他按键」分支
+        // 把首选词顺手顶上屏，还漏一个方括号进目标程序。
+        _ = TurnPage(next);
+        return new KeyDecision(true, null, true);
     }
 
     private KeyDecision OnOtherKey()

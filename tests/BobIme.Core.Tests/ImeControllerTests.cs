@@ -139,6 +139,103 @@ public class ImeControllerTests
     }
 
     [Fact]
+    public void CloseBracket_MovesToTheNextPage()
+    {
+        var controller = NewController();
+        controller.OnKeyDown(Letter('k'));
+
+        var decision = controller.OnKeyDown(Key(VirtualKey.OemCloseBrackets));
+
+        Assert.True(decision is { Consume: true, CommitText: null, Composing: true });
+        Assert.Equal(2, controller.Page);
+    }
+
+    [Fact]
+    public void OpenBracket_OnFirstPageIsSwallowedWithoutCommitting()
+    {
+        var controller = NewController();
+        controller.OnKeyDown(Letter('k'));
+
+        var decision = controller.OnKeyDown(Key(VirtualKey.OemOpenBrackets));
+
+        // 翻不动也照样吞掉：放行的话会走「其他按键」把首选顶上屏，还漏一个方括号。
+        Assert.True(decision is { Consume: true, CommitText: null });
+        Assert.Equal(1, controller.Page);
+        Assert.Equal("中", controller.Candidates[0].Text);
+    }
+
+    [Fact]
+    public void CloseBracket_OnLastPageStaysPut()
+    {
+        var controller = NewController();
+        controller.OnKeyDown(Letter('k'));
+        for (var i = 0; i < controller.Pages; i++)
+        {
+            controller.OnKeyDown(Key(VirtualKey.OemCloseBrackets));
+        }
+
+        Assert.Equal(controller.Pages, controller.Page);
+        Assert.True(controller.OnKeyDown(Key(VirtualKey.OemCloseBrackets)).Consume);
+        Assert.Equal(controller.Pages, controller.Page);
+    }
+
+    [Fact]
+    public void Digit_SelectsFromTheCurrentPage()
+    {
+        var controller = NewController();
+        controller.OnKeyDown(Letter('k'));
+        controller.OnKeyDown(Key(VirtualKey.OemCloseBrackets));
+
+        var first = controller.Candidates[0].Text;
+
+        Assert.NotEqual("中", first);
+        Assert.Equal(first, controller.OnKeyDown(DigitKey(1)).CommitText);
+    }
+
+    [Theory]
+    [InlineData(VirtualKey.OemOpenBrackets)]
+    [InlineData(VirtualKey.OemCloseBrackets)]
+    public void Brackets_WhenIdlePassThroughToTheProgram(uint vk) =>
+        Assert.False(NewController().OnKeyDown(Key(vk)).Consume);
+
+    [Fact]
+    public void TurnPage_MouseArrowWalksThePages()
+    {
+        var controller = NewController();
+        controller.OnKeyDown(Letter('k'));
+
+        Assert.True(controller.TurnPage(true));
+        Assert.Equal(2, controller.Page);
+
+        for (var i = 2; i < controller.Pages; i++)
+        {
+            controller.TurnPage(true);
+        }
+
+        // 翻到头就返回 false，候选窗那档箭头也跟着变灰，不会白点。
+        Assert.False(controller.TurnPage(true));
+        Assert.Equal(controller.Pages, controller.Page);
+
+        Assert.True(controller.TurnPage(false));
+        Assert.True(controller.IsComposing);
+        Assert.Equal("k", controller.Buffer);
+    }
+
+    [Fact]
+    public void TurnPage_OnFirstPageAndWhenIdleDoesNothing()
+    {
+        var idle = NewController();
+        Assert.False(idle.TurnPage(false));
+        Assert.False(idle.TurnPage(true));
+
+        var controller = NewController();
+        controller.OnKeyDown(Letter('k'));
+        Assert.False(controller.TurnPage(false));
+        Assert.Equal("k", controller.Buffer);
+        Assert.Equal("中", controller.Candidates[0].Text);
+    }
+
+    [Fact]
     public void UnassignedKey_PassesThroughAndCommitsFirstCandidate()
     {
         var controller = NewController();

@@ -100,6 +100,12 @@ internal static class CaretLocator
         return above.Y >= work.Top ? above : position;
     }
 
+    /// <summary>
+    /// 翻页不重新定位，位置原样留着；但窗口宽度会随每页候选长短变，
+    /// 所以还得夹一次，别把右边露到屏幕外。
+    /// </summary>
+    public static Point Keep(Point position, Size windowSize) => Clamp(position, windowSize, WorkArea());
+
     private static Rectangle WorkArea() =>
         Native.SystemParametersInfoW(Native.SPI_GETWORKAREA, 0, out var work, 0)
             ? Rectangle.FromLTRB(work.Left, work.Top, work.Right, work.Bottom)
