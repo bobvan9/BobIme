@@ -34,6 +34,10 @@ internal sealed class ImeApplicationContext : ApplicationContext
 
         _menu = new ContextMenuStrip();
         _menu.Items.Add(_enableItem);
+        _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add(new ToolStripMenuItem("说明", null, (_, _) => TrayDialogs.ShowUsage()));
+        _menu.Items.Add(new ToolStripMenuItem("关于", null, (_, _) => TrayDialogs.ShowAbout()));
+        _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(new ToolStripMenuItem("退出", null, (_, _) => ExitThread()));
 
         _iconChinese = LoadIcon("app.ico") ?? SystemIcons.Application;

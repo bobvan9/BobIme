@@ -7,7 +7,7 @@
 ## 目录
 
 - `src/BobIme.Core` 码表加载、前缀查询、组码状态机。不碰窗口也不碰键盘，可以单测。
-- `src/BobIme.Shell` 钩子、候选窗、光标定位、SendInput 注入、托盘常驻。
+- `src/BobIme.Shell` 钩子、候选窗、光标定位、SendInput 注入、托盘常驻（右键菜单：启用/停用、说明、关于、退出）。
 - `tools/BobIme.Probe` 命令行敲码工具，调编码、看候选顺序用。
 - `data/dict` 两份码表，见下。
 
