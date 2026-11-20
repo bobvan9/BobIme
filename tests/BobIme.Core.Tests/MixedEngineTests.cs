@@ -189,6 +189,32 @@ public class MixedEngineTests
         Assert.Equal("可", controller.OnKeyDown(Key(VirtualKey.Space)).CommitText);
     }
 
+    [Fact]
+    public void EnglishMode_KeepsTheMountedTableForTheNextChineseSession()
+    {
+        var controller = new ImeController(Engine()) { ActiveSource = CandidateSource.Pinyin };
+
+        // 托盘选「英文输入」再切回来，挂的还是刚才那本码表，不该掉回混输。
+        controller.SetChineseMode(false);
+        controller.SetChineseMode(true);
+        controller.OnKeyDown(Letter('k'));
+
+        Assert.Equal("可", controller.OnKeyDown(Key(VirtualKey.Space)).CommitText);
+    }
+
+    [Fact]
+    public void EnglishMode_DropsTheHalfTypedCode()
+    {
+        var controller = new ImeController(Engine());
+        controller.OnKeyDown(Letter('k'));
+
+        controller.SetChineseMode(false);
+
+        Assert.False(controller.IsComposing);
+        Assert.Equal("", controller.Buffer);
+        Assert.False(controller.OnKeyDown(Letter('k')).Consume);
+    }
+
     private static IEnumerable<string> Texts(ImeEngine engine) => engine.Candidates.Select(c => c.Text);
 
     private static uint LetterVk(char letter) => (uint)(VirtualKey.A + char.ToUpperInvariant(letter) - 'A');

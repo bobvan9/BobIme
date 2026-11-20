@@ -129,15 +129,17 @@ internal static class SelfCheck
 
         try
         {
-            var delivered = TextInserter.SendText("中国");
-            PumpUntil(() => scans.Count >= 2, 500);
+            // 全角标点和汉字一样走 Unicode 事件，顺手一起验了。
+            var sample = "中国，。";
+            var delivered = TextInserter.SendText(sample);
+            PumpUntil(() => scans.Count >= sample.Length, 500);
 
-            // Unicode 事件的 wScan 就是字符本身，钩子里读到的应当正好是这两个码位。
-            var expected = new uint[] { '中', '国' };
+            // Unicode 事件的 wScan 就是字符本身，钩子里读到的应当正好是这几个码位。
+            var expected = sample.Select(c => (uint)c);
             var echoed = string.Join(" ", scans.Select(s => $"U+{s:X4}"));
-            Console.WriteLine($"SendInput 接收 {delivered}/4 个事件，钩子回读 {echoed}");
+            Console.WriteLine($"SendInput 接收 {delivered}/{sample.Length * 2} 个事件，钩子回读 {echoed}");
 
-            var ok = delivered == 4 && scans.SequenceEqual(expected);
+            var ok = delivered == sample.Length * 2 && scans.SequenceEqual(expected);
             Console.WriteLine(ok ? "自检通过" : "自检完成，但注入回读不符");
             return ok;
         }

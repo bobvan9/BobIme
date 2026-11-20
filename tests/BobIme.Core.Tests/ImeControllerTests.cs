@@ -6,7 +6,6 @@ namespace BobIme.Core.Tests;
 
 public class ImeControllerTests
 {
-    private const uint Period = 0xBE;
     private const uint F1 = 0x70;
 
     [Fact]
@@ -241,11 +240,113 @@ public class ImeControllerTests
         var controller = NewController();
         controller.OnKeyDown(Letter('k'));
 
-        var decision = controller.OnKeyDown(Key(Period));
+        var decision = controller.OnKeyDown(Key(F1));
 
-        // 标点要先把首候选送进去，再把键本身放行，让目标程序自己打句号。
+        // 没派上用途的键要先把首候选送进去，再把键本身放行，让目标程序自己处理。
         Assert.False(decision.Consume);
         Assert.Equal("中", decision.CommitText);
+    }
+
+    [Fact]
+    public void Comma_InChinesePunctuation_SendsTheMarkAfterTheWord()
+    {
+        var controller = NewController();
+        controller.OnKeyDown(Letter('k'));
+
+        var decision = controller.OnKeyDown(Key(VirtualKey.OemComma));
+
+        // 中文标点档：先顶词再顶标点，合成一次上屏，键本身不能再漏给目标程序。
+        Assert.True(decision.Consume);
+        Assert.Equal("中，", decision.CommitText);
+        Assert.False(controller.IsComposing);
+    }
+
+    [Fact]
+    public void Comma_InEnglishPunctuation_LeavesTheKeyToTheProgram()
+    {
+        var controller = NewController();
+        controller.ChinesePunctuation = false;
+        controller.OnKeyDown(Letter('k'));
+
+        var decision = controller.OnKeyDown(Key(VirtualKey.OemComma));
+
+        Assert.False(decision.Consume);
+        Assert.Equal("中", decision.CommitText);
+    }
+
+    [Theory]
+    [InlineData(VirtualKey.OemPeriod, false, "。")]
+    [InlineData(VirtualKey.OemPeriod, true, "》")]
+    [InlineData(VirtualKey.OemComma, true, "《")]
+    [InlineData(VirtualKey.OemQuestion, true, "？")]
+    [InlineData(VirtualKey.OemSemicolon, false, "；")]
+    [InlineData(VirtualKey.OemSemicolon, true, "：")]
+    [InlineData(VirtualKey.D1, true, "！")]
+    [InlineData(VirtualKey.D6, true, "……")]
+    [InlineData(VirtualKey.D8, true, "×")]
+    [InlineData(VirtualKey.D9, true, "（")]
+    [InlineData(VirtualKey.D0, true, "）")]
+    [InlineData(VirtualKey.OemMinus, true, "——")]
+    [InlineData(VirtualKey.OemTilde, false, "·")]
+    [InlineData(VirtualKey.OemTilde, true, "～")]
+    [InlineData(VirtualKey.OemBackslash, false, "、")]
+    public void Punctuation_WhenIdleSendsOnlyTheMark(uint vk, bool shift, string expected)
+    {
+        var decision = NewController().OnKeyDown(Key(vk, shift: shift));
+
+        Assert.True(decision.Consume);
+        Assert.Equal(expected, decision.CommitText);
+        Assert.False(decision.Composing);
+    }
+
+    [Fact]
+    public void Quotes_AlternateOpenAndClose()
+    {
+        var controller = NewController();
+
+        Assert.Equal("‘", controller.OnKeyDown(Key(VirtualKey.OemQuotes)).CommitText);
+        Assert.Equal("’", controller.OnKeyDown(Key(VirtualKey.OemQuotes)).CommitText);
+        Assert.Equal("“", controller.OnKeyDown(Key(VirtualKey.OemQuotes, shift: true)).CommitText);
+        Assert.Equal("”", controller.OnKeyDown(Key(VirtualKey.OemQuotes, shift: true)).CommitText);
+    }
+
+    [Fact]
+    public void Brackets_KeepPagingInChinesePunctuation()
+    {
+        var controller = NewController();
+        controller.OnKeyDown(Letter('k'));
+
+        var decision = controller.OnKeyDown(Key(VirtualKey.OemCloseBrackets));
+
+        // 方括号被翻页占了，中文标点档也不能把它抢走。
+        Assert.True(decision.Consume);
+        Assert.Null(decision.CommitText);
+        Assert.Equal(2, controller.Page);
+    }
+
+    [Fact]
+    public void ShiftedKeyNotInTheTable_KeepsTheCodeUntouched()
+    {
+        var controller = NewController();
+        controller.OnKeyDown(Letter('k'));
+
+        var decision = controller.OnKeyDown(Key(VirtualKey.OemOpenBrackets, shift: true));
+
+        // Shift+[ 打出的是 { ，既不该翻页也没进标点表，照旧放行、手上半截编码不许被打散。
+        Assert.False(decision.Consume);
+        Assert.True(controller.IsComposing);
+    }
+
+    [Fact]
+    public void Punctuation_DoesNotFireInEnglishMode()
+    {
+        var controller = NewController();
+        controller.SetChineseMode(false);
+
+        var decision = controller.OnKeyDown(Key(VirtualKey.OemComma));
+
+        Assert.False(decision.Consume);
+        Assert.Null(decision.CommitText);
     }
 
     [Fact]

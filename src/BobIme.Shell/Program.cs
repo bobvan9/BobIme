@@ -3,9 +3,10 @@ using BobIme.Shell.Interop;
 
 namespace BobIme.Shell;
 
-/// <summary>托盘菜单里三选一的输入档。</summary>
+/// <summary>托盘菜单里四选一的输入档。英文档就是中文模式关掉，另三档决定挂哪本码表。</summary>
 internal enum InputMode
 {
+    English,
     Wubi,
     Pinyin,
     Mixed,
@@ -25,12 +26,13 @@ internal sealed class ImeApplicationContext : ApplicationContext
     private readonly NotifyIcon _tray;
     private readonly ContextMenuStrip _menu;
     private readonly LowLevelKeyboardHook _hook;
+    private readonly ToolStripMenuItem[] _punctItems;
     private readonly ToolStripMenuItem[] _modeItems;
     private readonly ImeController _controller;
+    private SymbolForm? _symbols;
     private readonly Icon _iconChinese;
     private readonly Icon _iconEnglish;
     private readonly bool _hasPinyin;
-    private InputMode _mode = InputMode.Mixed;
     private string _trayText = "";
 
     public ImeApplicationContext(IReadOnlyList<CodeTable> tables)
@@ -49,16 +51,19 @@ internal sealed class ImeApplicationContext : ApplicationContext
         _ = _candidates.Handle;
 
         _hasPinyin = tables.Any(t => t.Source == CandidateSource.Pinyin);
-        _mode = _hasPinyin ? InputMode.Mixed : InputMode.Wubi;
-
-        _menu = new ContextMenuStrip();
-        _modeItems = [ModeItem("五笔输入", InputMode.Wubi), ModeItem("拼音输入", InputMode.Pinyin),
-            ModeItem("混合输入", InputMode.Mixed)];
-        foreach (var item in _modeItems)
+        if (!_hasPinyin)
         {
-            _menu.Items.Add(item);
+            // 没挂拼音码表时停在五笔档，免得圆点落在一个灰掉的菜单项上。
+            _controller.ActiveSource = CandidateSource.Wubi;
         }
 
+        _menu = new ContextMenuStrip();
+        _menu.Items.Add(new ToolStripMenuItem("符号输入", null, (_, _) => ShowSymbols()));
+        _menu.Items.Add(new ToolStripSeparator());
+        _punctItems = [PunctItem("英文标点", false), PunctItem("中文标点", true)];
+        _modeItems = [ModeItem("英文输入", InputMode.English), ModeItem("五笔输入", InputMode.Wubi),
+            ModeItem("拼音输入", InputMode.Pinyin), ModeItem("混合输入", InputMode.Mixed)];
+        _menu.Items.AddRange([.. _punctItems, new ToolStripSeparator(), .. _modeItems]);
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(new ToolStripMenuItem("说明", null, (_, _) => TrayDialogs.ShowUsage()));
         _menu.Items.Add(new ToolStripMenuItem("关于", null, (_, _) => TrayDialogs.ShowAbout()));
@@ -81,13 +86,28 @@ internal sealed class ImeApplicationContext : ApplicationContext
         SyncStatus();
     }
 
+    private ToolStripMenuItem PunctItem(string label, bool chinese)
+    {
+        var item = new ToolStripMenuItem(label)
+        {
+            Tag = chinese,
+            ImageScaling = ToolStripItemImageScaling.None,
+        };
+        item.Click += (_, _) =>
+        {
+            _controller.ChinesePunctuation = chinese;
+            SyncStatus();
+        };
+        return item;
+    }
+
     private ToolStripMenuItem ModeItem(string label, InputMode mode)
     {
         var item = new ToolStripMenuItem(label)
         {
             Tag = mode,
             ImageScaling = ToolStripItemImageScaling.None,
-            Enabled = mode == InputMode.Wubi || _hasPinyin,
+            Enabled = mode is InputMode.English or InputMode.Wubi || _hasPinyin,
         };
         item.Click += (_, _) => SetMode(mode);
         return item;
@@ -95,18 +115,35 @@ internal sealed class ImeApplicationContext : ApplicationContext
 
     private void SetMode(InputMode mode)
     {
-        _mode = mode;
-        _controller.ActiveSource = mode switch
+        if (mode == InputMode.English)
         {
-            InputMode.Wubi => CandidateSource.Wubi,
-            InputMode.Pinyin => CandidateSource.Pinyin,
-            _ => null,
-        };
+            _controller.SetChineseMode(false);
+        }
+        else
+        {
+            _controller.ActiveSource = mode switch
+            {
+                InputMode.Wubi => CandidateSource.Wubi,
+                InputMode.Pinyin => CandidateSource.Pinyin,
+                _ => null,
+            };
+            _controller.SetChineseMode(true);
+        }
+
         // 挑档就是打算用，总开关顺手开回来，不然点完打字没反应像是坏了。
         _controller.Enabled = true;
         _candidates.HideComposition();
         SyncStatus();
     }
+
+    private InputMode CurrentMode => !_controller.ChineseMode
+        ? InputMode.English
+        : _controller.ActiveSource switch
+        {
+            CandidateSource.Wubi => InputMode.Wubi,
+            CandidateSource.Pinyin => InputMode.Pinyin,
+            _ => InputMode.Mixed,
+        };
 
     private static Bitmap Bullet(bool on)
     {
@@ -185,11 +222,24 @@ internal sealed class ImeApplicationContext : ApplicationContext
         _candidates.ShowComposition(
             _controller.Buffer, _controller.Candidates, _controller.Page, _controller.Pages);
 
+    private void ShowSymbols()
+    {
+        _candidates.HideComposition();
+        _symbols ??= new SymbolForm();
+        _symbols.ShowAtCaret();
+    }
+
     private void SyncStatus()
     {
+        // 圆点只看控制器现在的状态，左 Shift 单敲切的英文档这里会跟着亮。
         foreach (var item in _modeItems)
         {
-            item.Image = (InputMode)item.Tag! == _mode ? RadioOn : RadioOff;
+            item.Image = (InputMode)item.Tag! == CurrentMode ? RadioOn : RadioOff;
+        }
+
+        foreach (var item in _punctItems)
+        {
+            item.Image = (bool)item.Tag! == _controller.ChinesePunctuation ? RadioOn : RadioOff;
         }
 
         var trayText = !_controller.Enabled
@@ -218,6 +268,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
             _tray.Dispose();
             _menu.Dispose();
             _candidates.Dispose();
+            _symbols?.Dispose();
         }
 
         base.Dispose(disposing);

@@ -5,7 +5,7 @@ using BobIme.Shell.Interop;
 namespace BobIme.Shell;
 
 /// <summary>无边框候选窗：不激活、不进任务栏，绘制全部自己来。</summary>
-internal sealed class CandidateForm : Form
+internal sealed class CandidateForm : FloatingForm
 {
     private const int Inset = 7;
     private const int Gap = 10;
@@ -54,27 +54,9 @@ internal sealed class CandidateForm : Form
 
     public CandidateForm()
     {
-        // 关掉自动缩放，位置和尺寸就能直接用 CaretLocator 拿到的物理像素。
-        AutoScaleMode = AutoScaleMode.None;
-        FormBorderStyle = FormBorderStyle.None;
-        ShowInTaskbar = false;
-        StartPosition = FormStartPosition.Manual;
-        TopMost = true;
         BackColor = PanelColor;
         ForeColor = CandidateColor;
         DoubleBuffered = true;
-    }
-
-    protected override bool ShowWithoutActivation => true;
-
-    protected override CreateParams CreateParams
-    {
-        get
-        {
-            var cp = base.CreateParams;
-            cp.ExStyle |= Native.WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW | Native.WS_EX_TOPMOST;
-            return cp;
-        }
     }
 
     public void ShowComposition(string buffer, IReadOnlyList<Candidate> candidates, int page, int pages)

@@ -12,11 +12,22 @@ public static class VirtualKey
     public const uint A = 0x41;
     public const uint Z = 0x5A;
     public const uint D0 = 0x30;
+    public const uint D1 = 0x31;
+    public const uint D6 = 0x36;
+    public const uint D8 = 0x38;
     public const uint D9 = 0x39;
     public const uint NumPad0 = 0x60;
     public const uint NumPad9 = 0x69;
+    public const uint OemSemicolon = 0xBA;
+    public const uint OemComma = 0xBC;
+    public const uint OemMinus = 0xBD;
+    public const uint OemPeriod = 0xBE;
+    public const uint OemQuestion = 0xBF;
+    public const uint OemTilde = 0xC0;
     public const uint OemOpenBrackets = 0xDB;
+    public const uint OemBackslash = 0xDC;
     public const uint OemCloseBrackets = 0xDD;
+    public const uint OemQuotes = 0xDE;
 }
 
 /// <summary>一次按键的处置结果。<see cref="Composing"/> 决定候选窗此刻该不该显示。</summary>
@@ -31,6 +42,7 @@ public sealed record KeyDecision(bool Consume, string? CommitText, bool Composin
 public sealed class ImeController
 {
     private readonly ImeEngine _engine;
+    private readonly Punctuator _punctuation = new();
 
     public ImeController(ImeEngine engine) => _engine = engine;
 
@@ -38,6 +50,9 @@ public sealed class ImeController
 
     /// <summary>中文模式；左 Shift 单敲切换，英文模式下按键一律原样放行。</summary>
     public bool ChineseMode { get; private set; } = true;
+
+    /// <summary>中文标点档：标点换成全角自己送出去；关掉就一个键都不碰，全角由目标程序自己处理。</summary>
+    public bool ChinesePunctuation { get; set; } = true;
 
     /// <summary>挂哪一类码表：五笔、拼音，<c>null</c> 是混输。换档会丢掉手上的半截编码。</summary>
     public CandidateSource? ActiveSource
@@ -54,10 +69,15 @@ public sealed class ImeController
             return KeyDecision.Passthrough;
         }
 
-        ChineseMode = !ChineseMode;
-        // 切模式时手上的半截编码要丢掉，不然切回来它还在，上屏时机就乱了。
-        _engine.Clear();
+        SetChineseMode(!ChineseMode);
         return new KeyDecision(false, null, false);
+    }
+
+    /// <summary>直接指定中/英，托盘菜单选「英文输入」走这条。换模式手上的半截编码要丢掉。</summary>
+    public void SetChineseMode(bool chinese)
+    {
+        ChineseMode = chinese;
+        _engine.Clear();
     }
 
     public bool IsComposing => _engine.IsComposing;
@@ -98,8 +118,20 @@ public sealed class ImeController
             return KeyDecision.Passthrough;
         }
 
-        // 组合键既不参与组码，也不该顺手把候选上屏：编码留着，原样放行。
-        if (key.Ctrl || key.Alt || key.Shift)
+        // Ctrl/Alt 组合既不参与组码，也不该顺手把候选上屏：编码留着，原样放行。
+        if (key.Ctrl || key.Alt)
+        {
+            return new KeyDecision(false, null, IsComposing);
+        }
+
+        // 中文标点档把标点换成全角自己送出去；表里没有的（大写字母、@#% 之类）走下面的老路。
+        if (ChinesePunctuation && _punctuation.TryTranslate(key.Vk, key.Shift, out var mark))
+        {
+            return OnPunctuation(mark);
+        }
+
+        // 按住 Shift 又不在标点表里，就是 Shift 打大写之类，编码不能被打散。
+        if (key.Shift)
         {
             return new KeyDecision(false, null, IsComposing);
         }
@@ -189,6 +221,13 @@ public sealed class ImeController
         // 把首选词顺手顶上屏，还漏一个方括号进目标程序。
         _ = TurnPage(next);
         return new KeyDecision(true, null, true);
+    }
+
+    private KeyDecision OnPunctuation(string mark)
+    {
+        // 编码还在就先把首选顶上屏再接标点，顺序和「先词后标点」的直觉一致。
+        var text = IsComposing ? Commit(0).CommitText + mark : mark;
+        return new KeyDecision(true, text, false);
     }
 
     private KeyDecision OnOtherKey()
