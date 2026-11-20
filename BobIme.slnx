@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BobIme.Core/BobIme.Core.csproj" />
+    <Project Path="src/BobIme.Shell/BobIme.Shell.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BobIme.Core.Tests/BobIme.Core.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/BobIme.Probe/BobIme.Probe.csproj" />
+    <Project Path="tools/BobIme.Icons/BobIme.Icons.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\BobIme.Core\BobIme.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\data\dict\jisuan43.tsv" Link="dict\jisuan43.tsv" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\data\dict\pinyin_base.tsv" Link="dict\pinyin_base.tsv" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\assets\app.ico" Link="app.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\assets\app-en.ico" Link="app-en.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>Bob 五笔</Product>
+    <Company>Bob</Company>
+    <Copyright>© Bob</Copyright>
+  </PropertyGroup>
+
+</Project>
