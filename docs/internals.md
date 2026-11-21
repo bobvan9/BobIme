@@ -277,6 +277,16 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
 - `.github/workflows/ci.yml` 只管推 main 和 PR 时跑一遍 `dotnet test`，不出包也不发版，
   README 顶上那枚构建徽章指的就是它；发版徽章走 `v*` 标签那条。两条别合一条，
   合了以后每次推 main 都会去核对版本号、装 Inno，白等三十秒还可能误建 Release。
+- **winget 清单在 `installer\winget\manifests\b\bobvan9\BobIme\<版本>\`**，四个文件（version/installer/
+  defaultLocale/locale），目录层级照上游 `manifests/<小写首字母>/<Publisher>/<App>/<Version>/`，整份版本目录
+  拷进 fork 就能提 PR。跟着版本走的是三处：`PackageVersion`、`InstallerUrl` 里的 `v<版本>` 和文件名、
+  `InstallerSha256`；哈希别自己算，取 Release 附件的 digest：
+  `gh api repos/bobvan9/BobIme/releases/latest --jq '.assets[]|.digest'`。
+  自检用本机 winget：`winget validate --manifest <那个目录>`（当前 schema 是 1.28.0，`Platform` 是枚举表，
+  写「Windows 10」这种自由文本会被判不合格，索性不写）。
+  `ProductCode` 填的是 `.iss` 里 `AppId` 那个 GUID，实测装机键就是
+  `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{7A3C1E58-…}_is1`——**AppId 改了升级识别就断**，
+  这条跟 `.iss` 顶上那句注释是同一件事。安装包只有 win-x64 一个产物，清单里就只挂 x64，别给 arm64 凑一条。
 - 现在是 `PrivilegesRequired=admin` 的全用户安装，默认目录 `C:\Program Files\BobIme`（要写系统目录，
   所以安装和升级都会弹一次 UAC）；开机自启写 HKLM 的 `Run` 项，对所有登录用户生效。
   安装时会顺手删掉早先按用户安装留下的 HKCU `Run` 项，免得登录后拉起两份进程挂两个钩子。
