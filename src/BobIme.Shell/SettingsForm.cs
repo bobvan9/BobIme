@@ -38,16 +38,51 @@ internal sealed class SettingsForm : Form
     private readonly ComboBox _candidatePlacement = Picker();
     private readonly ComboBox _placement = Picker();
     private readonly CheckBox _trayDouble = new() { Text = "托盘图标双击打开符号面板", AutoSize = true };
-    private readonly TextBox _englishWindows = new()
-    {
-        Multiline = true,
-        ScrollBars = ScrollBars.Vertical,
-        Width = 300,
-        Height = 84,
-        BackColor = Color.White,
-    };
+    private readonly DataGridView _rules = RuleGrid();
 
-    /// <param name="lastForegroundExe">打开设置之前那个在前台程序的文件名，给「填入」按钮用；读不到就是 null。</param>
+    /// <summary>
+    /// 规则表：一行一个程序，左边填程序名、右边选档位。
+    /// 增行靠按钮、删行用 Del，所以不给表格自带的那条空白新行（它会把「当前行」始终占住）。
+    /// </summary>
+    private static DataGridView RuleGrid()
+    {
+        var name = new DataGridViewTextBoxColumn
+        {
+            HeaderText = "程序名",
+            Name = "name",
+            ToolTipText = "只认文件名，wow、Wow.exe、整条路径都算同一个",
+            Width = 208,
+            SortMode = DataGridViewColumnSortMode.NotSortable,
+        };
+        var mode = new DataGridViewComboBoxColumn
+        {
+            HeaderText = "档位",
+            Name = "mode",
+            DataSource = WindowModeInfo.DisplayNames,
+            Width = 88,
+            FlatStyle = FlatStyle.Flat,
+            SortMode = DataGridViewColumnSortMode.NotSortable,
+            Resizable = DataGridViewTriState.False,
+        };
+        return new DataGridView
+        {
+            Columns = { name, mode },
+            AllowUserToAddRows = false,
+            AllowUserToDeleteRows = true,
+            RowHeadersVisible = false,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+            MultiSelect = false,
+            AutoGenerateColumns = false,
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+            BackgroundColor = PanelColor,
+            BorderStyle = BorderStyle.FixedSingle,
+            GridColor = Color.FromArgb(0xDD, 0xDD, 0xDD),
+            Width = 300,
+            Height = 122,
+        };
+    }
+
+    /// <param name="lastForegroundExe">打开设置之前那个在前台程序的文件名，给「填成一条规则」按钮用；读不到就是 null。</param>
     public SettingsForm(AppSettings settings, bool hasPinyin, string? lastForegroundExe)
     {
         _hasPinyin = hasPinyin;
@@ -81,12 +116,13 @@ internal sealed class SettingsForm : Form
         AddRow("标点档", PunctPanel());
         AddRow("", Note("这两项在下次启动程序时生效；当前档位随时能在托盘菜单里切。"));
 
-        AddSection("英文窗口");
-        AddRow("程序名", _englishWindows);
+        AddSection("按程序定档");
+        AddRow("规则表", _rules);
         AddRow("", ForegroundRow(lastForegroundExe));
         AddRow("", Note(
-            "名单内的程序获得焦点时先切到英文档，离开时还回原来那档；在其中手动切过中文则以手动那次为准。"
-            + $"每行一个，只认文件名，最多 {WindowNames.Max} 个。"));
+            "表内的程序获得焦点时先切到它那一档，离开时还回原来那档；在其中手动切过档位则以手动那次为准。"
+            + "中文档只把中文模式打开，码表档仍旧用当前那一档。"
+            + $"程序名只认文件名，最多 {WindowRule.Max} 条；选中一行按 Del 删除。"));
 
         AddSection("快捷键");
         AddRow("切换中英输入", KeyPanel(_englishKey));
@@ -159,7 +195,7 @@ internal sealed class SettingsForm : Form
         return Flow(box, clear);
     }
 
-    /// <summary>取打开设置之前的前台程序名：读不到就不给填，免得往名单里塞一条空项。</summary>
+    /// <summary>取打开设置之前的前台程序名：读不到就不给填，免得往表里塞一条空项。</summary>
     private Panel ForegroundRow(string? exe)
     {
         var hint = new Label
@@ -169,14 +205,57 @@ internal sealed class SettingsForm : Form
             ForeColor = HintColor,
             Margin = new Padding(0, 4, 8, 0),
         };
-        var fill = new Button { Text = "填入", AutoSize = true, Enabled = exe is { Length: > 0 } };
-        fill.Click += (_, _) => _englishWindows.Text = string.Join(
-            Environment.NewLine, WindowNames.Normalize([.. WindowLines(_englishWindows.Text), exe!]));
-        return Flow(hint, fill);
+        var fill = new Button { Text = "填成一条规则", AutoSize = true, Enabled = exe is { Length: > 0 } };
+        fill.Click += (_, _) => AppendRule(new WindowRule(exe!, WindowMode.English));
+        var blank = new Button { Text = "添加一行", AutoSize = true };
+        blank.Click += (_, _) => AppendRule(new WindowRule("", WindowMode.English));
+        return Flow(hint, fill, blank);
     }
 
-    private static string[] WindowLines(string text) =>
-        text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    /// <summary>新行加在表尾并把光标停在程序名上，接着就能敲。</summary>
+    private void AppendRule(WindowRule rule)
+    {
+        CommitEdit();
+        var index = _rules.Rows.Add(rule.Name, rule.Mode.Display());
+        _rules.CurrentCell = _rules.Rows[index].Cells[0];
+        _rules.BeginEdit(true);
+    }
+
+    /// <summary>正在录入的那一格要先落定，否则读表读到的是改之前的值。</summary>
+    private void CommitEdit()
+    {
+        if (_rules.IsCurrentCellInEditMode)
+        {
+            _rules.EndEdit();
+        }
+    }
+
+    /// <summary>把表里的行收成规则，空名的行丢掉。</summary>
+    private List<WindowRule> ReadRules()
+    {
+        CommitEdit();
+        var rules = new List<WindowRule>();
+        foreach (DataGridViewRow row in _rules.Rows)
+        {
+            var name = row.Cells[0].Value?.ToString()?.Trim();
+            if (name is { Length: > 0 })
+            {
+                rules.Add(new WindowRule(name, WindowModeInfo.FromDisplay(row.Cells[1].Value?.ToString())));
+            }
+        }
+
+        return rules;
+    }
+
+    private void WriteRules(IEnumerable<WindowRule> rules)
+    {
+        CommitEdit();
+        _rules.Rows.Clear();
+        foreach (var rule in rules)
+        {
+            _rules.Rows.Add(rule.Name, rule.Mode.Display());
+        }
+    }
 
     private static Panel Flow(params Control[] controls)
     {
@@ -284,7 +363,7 @@ internal sealed class SettingsForm : Form
         Select(_candidatePlacement, settings.CandidatePlacement);
         Select(_placement, settings.SymbolPanelPlacement);
         _trayDouble.Checked = settings.TrayDoubleClickOpensSymbols;
-        _englishWindows.Text = string.Join(Environment.NewLine, settings.EnglishWindows);
+        WriteRules(settings.WindowRules);
     }
 
     private static void Select(ComboBox box, Enum value)
@@ -313,6 +392,15 @@ internal sealed class SettingsForm : Form
             return;
         }
 
+        var duplicated = WindowRule.Duplicates(ReadRules());
+        if (duplicated.Count > 0)
+        {
+            MessageBox.Show(
+                $"「{string.Join("」「", duplicated.Select(r => r.Name))}」在规则表里登记了两次，请去掉一条再保存。",
+                Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
         Settings = draft;
         DialogResult = DialogResult.OK;
     }
@@ -331,7 +419,7 @@ internal sealed class SettingsForm : Form
         draft.CandidatePlacement = (CandidatePlacement)((Option)_candidatePlacement.SelectedItem!).Value;
         draft.SymbolPanelPlacement = (PanelPlacement)((Option)_placement.SelectedItem!).Value;
         draft.TrayDoubleClickOpensSymbols = _trayDouble.Checked;
-        draft.EnglishWindows = [.. WindowLines(_englishWindows.Text)];
+        draft.WindowRules = ReadRules();
         return draft.Normalized();
     }
 

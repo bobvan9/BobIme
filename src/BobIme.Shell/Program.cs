@@ -32,8 +32,12 @@ internal sealed class ImeApplicationContext : ApplicationContext
     private readonly ImeController _controller;
     private AppSettings _settings;
 
-    /// <summary>进「英文窗口」名单时记下的那一档；离开时还回去，用户在中途自己切过就不还。</summary>
+    /// <summary>
+    /// 进名单时记下的那一档（离开时还回去）和我们顶上来的那一档。
+    /// 两个都要记：用户在中途自己切过的话，当前档位已经不是我们顶的那一档，就不该还。
+    /// </summary>
     private InputMode? _held;
+    private InputMode? _forced;
     private nint _lastUserForeground;
     private SymbolForm? _symbols;
     private SettingsForm? _settingsForm;
@@ -153,7 +157,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
     }
 
     /// <summary>
-    /// 换前台窗口时按「英文窗口」名单处置。这条跑在窗口事件的回调里，只读进程名，别在这里问 UIA。
+    /// 换前台窗口时按「按程序定档」规则表处置。这条跑在窗口事件的回调里，只读进程名，别在这里问 UIA。
     /// 自家的窗口（设置界面、说明、消息框）不参与：它们是弹出来给人打字的，
     /// 跟着名单走会把用户正在填的内容搅掉。任务栏、桌面这类 shell 窗口同样不参与：
     /// 点托盘就会让它们成为前台，当成「离开名单」的话，菜单还没打开档位就先还回去了。
@@ -166,26 +170,47 @@ internal sealed class ImeApplicationContext : ApplicationContext
         }
 
         _lastUserForeground = hwnd;
-        var listed = WindowNames.Contains(_settings.EnglishWindows, WindowInfo.ExeName(hwnd));
-        if (listed)
+        var target = ModeOnTarget(hwnd);
+        if (target is not null)
         {
-            if (EnglishOnFocus.ShouldForceEnglish(CurrentMode, _held))
+            if (ModeOnFocus.ShouldApply(CurrentMode, _held, target))
             {
                 _held = CurrentMode;
-                SetMode(InputMode.English);
+                _forced = target;
+                SetMode(target.Value);
             }
 
             return;
         }
 
-        // 只有还是我们顶上来的英文才还回去；用户在窗口里手动切过的，以他那次为准。
-        var restore = EnglishOnFocus.ModeToRestore(_held);
+        var restore = ModeOnFocus.ModeToRestore(_held, _forced, CurrentMode);
         _held = null;
-        if (restore is not null && CurrentMode == InputMode.English)
+        _forced = null;
+        if (restore is not null)
         {
             SetMode(restore.Value);
         }
     }
+
+    /// <summary>
+    /// 这个窗口该顶哪一档：规则表里没有就返回 <c>null</c> 不插手，
+    /// 英文档直接切英文，中文档要「中文模式开着、码表档原样」。
+    /// 一个程序在表里只有一条（<see cref="WindowRule.Normalize"/> 按文件名去重），所以不会两头对着干。
+    /// </summary>
+    private InputMode? ModeOnTarget(nint hwnd) => WindowRule.Find(_settings.WindowRules, WindowInfo.ExeName(hwnd)) switch
+    {
+        null => null,
+        { Mode: WindowMode.English } => InputMode.English,
+        _ => ChineseMode,
+    };
+
+    /// <summary>中文模式开着时会是哪一档——只看控制器挂着的码表，英文档期间它没被动过。</summary>
+    private InputMode ChineseMode => _controller.ActiveSource switch
+    {
+        CandidateSource.Wubi => InputMode.Wubi,
+        CandidateSource.Pinyin => InputMode.Pinyin,
+        _ => InputMode.Mixed,
+    };
 
     private void SetMode(InputMode mode)
     {
@@ -210,14 +235,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
         SyncStatus();
     }
 
-    private InputMode CurrentMode => !_controller.ChineseMode
-        ? InputMode.English
-        : _controller.ActiveSource switch
-        {
-            CandidateSource.Wubi => InputMode.Wubi,
-            CandidateSource.Pinyin => InputMode.Pinyin,
-            _ => InputMode.Mixed,
-        };
+    private InputMode CurrentMode => !_controller.ChineseMode ? InputMode.English : ChineseMode;
 
     private static Bitmap Bullet(bool on)
     {

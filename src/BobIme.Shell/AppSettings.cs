@@ -247,44 +247,6 @@ public readonly record struct KeyBinding
     }
 }
 
-/// <summary>
-/// 「英文窗口」名单的比对：只认文件名，写成 <c>wow</c>、<c>Wow.exe</c> 或者整条路径都算同一个，
-/// 大小写无所谓。名单里存的是用户填的样子，比对时才统一。
-/// </summary>
-public static class WindowNames
-{
-    /// <summary>再多也没法一一核对，给设置界面留个上限。</summary>
-    public const int Max = 32;
-
-    public static bool Contains(IReadOnlyList<string>? names, string? exeName)
-    {
-        var want = Key(exeName);
-        return want.Length > 0 && names is not null && names.Any(name => Key(name) == want);
-    }
-
-    /// <summary>空项丢掉，同一个程序的重复项只留先写的那条，超出上限截断。</summary>
-    public static List<string> Normalize(IEnumerable<string>? names)
-    {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var kept = new List<string>();
-        foreach (var name in names ?? [])
-        {
-            var text = (name ?? "").Trim();
-            if (text.Length == 0 || !seen.Add(Key(text)) || kept.Count >= Max)
-            {
-                continue;
-            }
-
-            kept.Add(text);
-        }
-
-        return kept;
-    }
-
-    private static string Key(string? text) =>
-        Path.GetFileNameWithoutExtension((text ?? "").Trim()).ToLowerInvariant();
-}
-
 /// <summary>虚拟键码与短记号、显示名的对照，只收字母数字和 F 键之外的那些。</summary>
 internal static class KeyTable
 {
@@ -400,8 +362,12 @@ public sealed class AppSettings
     /// <summary>托盘图标双击开符号面板，默认关着，免得误碰。</summary>
     public bool TrayDoubleClickOpensSymbols { get; set; }
 
-    /// <summary>这些程序获得焦点时先切英文，离开时还回原来那档。空名单等于没这个功能。</summary>
-    public List<string> EnglishWindows { get; set; } = [];
+    /// <summary>
+    /// 「按程序定档」规则表：程序获得焦点时先切到哪一档，空表等于没这个功能。
+    /// 中文档只把中文模式打开，码表档仍旧用当前那一档。
+    /// 存成 <c>"wow.exe:english"</c> 这种短记号，比对范围和条数上限见 <see cref="WindowRule.Normalize"/>。
+    /// </summary>
+    public List<WindowRule> WindowRules { get; set; } = [];
 
     public static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BobIme", "settings.json");
@@ -420,7 +386,7 @@ public sealed class AppSettings
         SymbolPanelPlacement = SymbolPanelPlacement,
         TrayDoubleClickOpensSymbols = TrayDoubleClickOpensSymbols,
         // 名单要是共享同一个列表，设置界面里删一条就会当场改掉正在生效的那份。
-        EnglishWindows = [.. EnglishWindows],
+        WindowRules = [.. WindowRules],
     };
 
     public static AppSettings Load(string? path = null)
@@ -471,7 +437,7 @@ public sealed class AppSettings
             SymbolPanelPlacement = PanelPlacement.Center;
         }
 
-        EnglishWindows = WindowNames.Normalize(EnglishWindows);
+        WindowRules = [.. WindowRule.Normalize(WindowRules)];
         return this;
     }
 
@@ -505,7 +471,7 @@ public sealed class AppSettings
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        Converters = { new KeyBindingJsonConverter() },
+        Converters = { new KeyBindingJsonConverter(), new WindowRuleJsonConverter() },
     };
 
     /// <summary>按键存成 <c>"ctrl+."</c> 这种短记号，手改文件时不用去查虚拟键码。</summary>
@@ -520,5 +486,18 @@ public sealed class AppSettings
 
         public override void Write(Utf8JsonWriter writer, KeyBinding value, JsonSerializerOptions options) =>
             writer.WriteStringValue(value.Token);
+    }
+
+    /// <summary>规则存成 <c>"wow.exe:english"</c> 一行一条，档位漏写按英文档。</summary>
+    private sealed class WindowRuleJsonConverter : JsonConverter<WindowRule>
+    {
+        public override WindowRule Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            reader.TokenType == JsonTokenType.String ? WindowRule.Parse(reader.GetString()) ?? Empty : Empty;
+
+        public override void Write(Utf8JsonWriter writer, WindowRule value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value.Token);
+
+        /// <summary>读不成形时给一条空名的，<see cref="WindowRule.Normalize"/> 会把空项丢掉。</summary>
+        private static readonly WindowRule Empty = new("", WindowMode.English);
     }
 }

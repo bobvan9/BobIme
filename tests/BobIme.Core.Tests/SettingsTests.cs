@@ -81,7 +81,8 @@ public class SettingsTests
                 CandidatePlacement = CandidatePlacement.BottomRight,
                 SymbolPanelPlacement = PanelPlacement.Caret,
                 TrayDoubleClickOpensSymbols = true,
-                EnglishWindows = ["Wow.exe", "chrome.exe"],
+                WindowRules = [new("Wow.exe", WindowMode.English), new("chrome.exe", WindowMode.English),
+                    new("QQ.exe", WindowMode.Chinese)],
             };
 
             settings.Save(path);
@@ -97,7 +98,8 @@ public class SettingsTests
             Assert.Equal(CandidatePlacement.BottomRight, loaded.CandidatePlacement);
             Assert.Equal(PanelPlacement.Caret, loaded.SymbolPanelPlacement);
             Assert.True(loaded.TrayDoubleClickOpensSymbols);
-            Assert.Equal(["Wow.exe", "chrome.exe"], loaded.EnglishWindows);
+            Assert.Equal(["Wow.exe:english", "chrome.exe:english", "QQ.exe:chinese"],
+                loaded.WindowRules.Select(rule => rule.Token));
         }
         finally
         {
@@ -135,6 +137,26 @@ public class SettingsTests
             Assert.Equal(9, loaded.PageSize);
             Assert.Equal(PageKeySet.Brackets, loaded.PageKeys);
             Assert.Equal(CandidatePlacement.Caret, loaded.CandidatePlacement);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void HandEditedRuleTokens_AreReadAndJunkDropped()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"bobime-rules-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, """
+                {"windowRules": ["wow.exe:chinese", "QQ", ":english", "notepad:french", "wow:english"]}
+                """);
+            var loaded = AppSettings.Load(path);
+
+            // 档位漏写按英文档，认不出档位的丢掉，同一个程序只留先出现的那条。
+            Assert.Equal(["wow.exe:chinese", "QQ:english"], loaded.WindowRules.Select(rule => rule.Token));
         }
         finally
         {
@@ -312,66 +334,127 @@ public class SettingsTests
     [InlineData("WOW.EXE")]
     [InlineData("  wow.exe  ")]
     [InlineData(@"C:\Games\World of Warcraft\_retail\Wow.exe")]
-    public void AnySpellingOfTheProgramMatchesTheListedName(string name) =>
-        Assert.True(WindowNames.Contains(["Wow.exe"], name));
+    public void AnySpellingOfTheProgramMatchesTheRuleName(string name) =>
+        Assert.Equal(WindowMode.Chinese, WindowRule.Find([new WindowRule("Wow.exe", WindowMode.Chinese)], name)?.Mode);
 
     [Theory]
     [InlineData("WowClassic.exe")]
     [InlineData("notepad")]
     [InlineData("")]
     [InlineData(null)]
-    public void OtherProgramsAreNotOnTheList(string? name) =>
-        Assert.False(WindowNames.Contains(["Wow.exe"], name));
+    public void OtherProgramsMatchNoRule(string? name) =>
+        Assert.Null(WindowRule.Find([new WindowRule("Wow.exe", WindowMode.English)], name));
 
     [Fact]
-    public void EmptyListMatchesNothing()
+    public void EmptyRuleTableMatchesNothing()
     {
-        Assert.False(WindowNames.Contains([], "notepad.exe"));
-        Assert.False(WindowNames.Contains(null, "notepad.exe"));
+        Assert.Null(WindowRule.Find([], "notepad.exe"));
+        Assert.Null(WindowRule.Find(null, "notepad.exe"));
+    }
+
+    [Theory]
+    [InlineData("wow", "wow:english")]
+    [InlineData("Wow.exe:chinese", "Wow.exe:chinese")]
+    [InlineData("  QQ.exe:zh  ", "QQ.exe:chinese")]
+    [InlineData(@"C:\Games\Wow.exe:EN", @"C:\Games\Wow.exe:english")]
+    public void RuleToken_RoundTrips(string text, string expectedToken) =>
+        Assert.Equal(expectedToken, WindowRule.Parse(text)!.Token);
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(":english")]
+    [InlineData("wow:french")]
+    public void MalformedRuleTextIsNotARule(string text) => Assert.Null(WindowRule.Parse(text));
+
+    [Fact]
+    public void MalformedOrMissingRuleTextFallsBackToNoRule() => Assert.Null(WindowRule.Parse(null));
+
+    [Theory]
+    [InlineData(WindowMode.English, "英文档")]
+    [InlineData(WindowMode.Chinese, "中文档")]
+    public void DropdownLabelNamesTheModeAndReadsBack(WindowMode mode, string label)
+    {
+        Assert.Equal(label, mode.Display());
+        Assert.Equal(mode, WindowModeInfo.FromDisplay(label));
     }
 
     [Fact]
-    public void Normalize_KeepsTheFirstSpellingAndDropsBlanks()
-    {
-        var kept = WindowNames.Normalize(["  ", "Wow.exe", "wow", "notepad.exe", "NOTEPAD", "", "chrome"]);
+    public void DropdownTextWeDoNotKnowIsTheEnglishMode() =>
+        Assert.Equal(WindowMode.English, WindowModeInfo.FromDisplay(null));
 
-        Assert.Equal(["Wow.exe", "notepad.exe", "chrome"], kept);
+    [Fact]
+    public void Normalize_KeepsTheFirstRulePerProgramAndDropsBlanks()
+    {
+        var kept = WindowRule.Normalize(
+        [
+            new WindowRule("  ", WindowMode.English), new WindowRule("Wow.exe", WindowMode.English),
+            new WindowRule("wow", WindowMode.Chinese), new WindowRule("notepad.exe", WindowMode.Chinese),
+            new WindowRule("NOTEPAD", WindowMode.English), new WindowRule("chrome", WindowMode.English),
+        ]);
+
+        Assert.Equal(["Wow.exe:english", "notepad.exe:chinese", "chrome:english"], kept.Select(rule => rule.Token));
     }
 
     [Fact]
     public void Normalize_StopsAtTheLimit() =>
-        Assert.Equal(WindowNames.Max, WindowNames.Normalize(
-            Enumerable.Range(1, WindowNames.Max * 3).Select(i => $"p{i}.exe")).Count);
+        Assert.Equal(WindowRule.Max, WindowRule.Normalize(
+            Enumerable.Range(1, WindowRule.Max * 3).Select(i => new WindowRule($"p{i}.exe", WindowMode.English))).Count);
 
     [Fact]
-    public void DraftGetsItsOwnCopyOfTheNameList()
+    public void DraftGetsItsOwnCopyOfTheRuleTable()
     {
-        var live = new AppSettings { EnglishWindows = ["Wow.exe"] };
+        var live = new AppSettings { WindowRules = [new WindowRule("Wow.exe", WindowMode.English)] };
         var draft = live.Clone();
-        draft.EnglishWindows.Add("chrome.exe");
+        draft.WindowRules.Add(new WindowRule("chrome.exe", WindowMode.English));
 
         // 设置界面里删一条不能当场改掉正在生效的那份。
-        Assert.Equal(["Wow.exe"], live.EnglishWindows);
+        Assert.Equal(["Wow.exe:english"], live.WindowRules.Select(rule => rule.Token));
     }
 
     [Theory]
-    [InlineData(InputMode.Mixed, null, true)]
-    [InlineData(InputMode.Wubi, null, true)]
-    [InlineData(InputMode.English, null, false)]
-    [InlineData(InputMode.Wubi, InputMode.Mixed, false)]
-    [InlineData(InputMode.English, InputMode.Mixed, false)]
-    public void EnteringAListedWindow_DecidesWhetherToForceEnglish(
-        InputMode current, InputMode? held, bool expected) =>
-        Assert.Equal(expected, EnglishOnFocus.ShouldForceEnglish(current, held));
+    [InlineData(InputMode.Mixed, null, InputMode.English, true)]
+    [InlineData(InputMode.Wubi, null, InputMode.English, true)]
+    [InlineData(InputMode.Pinyin, null, InputMode.English, true)]
+    [InlineData(InputMode.English, null, InputMode.English, false)]
+    [InlineData(InputMode.English, null, InputMode.Mixed, true)]
+    [InlineData(InputMode.Wubi, null, InputMode.Wubi, false)]
+    [InlineData(InputMode.Wubi, InputMode.Mixed, InputMode.English, false)]
+    [InlineData(InputMode.Mixed, null, null, false)]
+    [InlineData(InputMode.English, InputMode.Mixed, null, false)]
+    public void EnteringAListedWindow_DecidesWhetherToSwitch(
+        InputMode current, InputMode? held, InputMode? target, bool expected) =>
+        Assert.Equal(expected, ModeOnFocus.ShouldApply(current, held, target));
+
+    [Theory]
+    [InlineData(InputMode.Mixed, InputMode.English, InputMode.English, InputMode.Mixed)]
+    [InlineData(InputMode.English, InputMode.Mixed, InputMode.Mixed, InputMode.English)]
+    [InlineData(InputMode.Mixed, InputMode.English, InputMode.Wubi, null)]
+    [InlineData(null, InputMode.English, InputMode.Mixed, null)]
+    public void LeavingAListedWindow_HandsBackOnlyWhatWeTook(
+        InputMode? held, InputMode? forced, InputMode current, InputMode? expected) =>
+        // 用户在表里的窗口中手动切过档，当前档位已经不是我们顶的那一档，就不该再搅动他的选择。
+        Assert.Equal(expected, ModeOnFocus.ModeToRestore(held, forced, current));
 
     [Fact]
-    public void LeavingAListedWindow_HandsBackWhatWasTaken()
+    public void Duplicates_AreReportedForTheLaterRule()
     {
-        Assert.Equal(InputMode.Mixed, EnglishOnFocus.ModeToRestore(InputMode.Mixed));
+        var rules = new[]
+        {
+            new WindowRule("Wow.exe", WindowMode.English),
+            new WindowRule("Notepad.exe", WindowMode.Chinese),
+            new WindowRule("notepad", WindowMode.English),
+        };
 
-        // 没替谁撑过英文就没什么可还的，用户自己的档位不该被搅动。
-        Assert.Null(EnglishOnFocus.ModeToRestore(null));
+        // 报的是后出现的那一条，好让人对得上要删掉的哪一行。
+        Assert.Equal(["notepad:english"], WindowRule.Duplicates(rules).Select(rule => rule.Token));
     }
+
+    [Fact]
+    public void DistinctPrograms_NeverCollide() =>
+        Assert.Empty(WindowRule.Duplicates([
+            new WindowRule("Wow.exe", WindowMode.English), new WindowRule("QQ.exe", WindowMode.Chinese),
+        ]));
 
     [Theory]
     [InlineData("Shell_TrayWnd")]
