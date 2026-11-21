@@ -7,11 +7,23 @@ internal static class CaretLocator
     private const int OffsetY = 4;
     private const int Margin = 8;
 
-    /// <summary>优先跟光标，取不到就跟着鼠标，最后落到工作区左下；被别的置顶窗口压住就挪开。</summary>
+    /// <summary>贴着光标摆：优先系统光标，取不到退到鼠标，最后落到工作区左下。</summary>
     public static Point Locate(Size windowSize, nint self)
     {
         var work = WorkArea();
-        var position = Clamp(Anchor(work), windowSize, work);
+        return Place(windowSize, self, CaretAnchor(work), work);
+    }
+
+    /// <summary>按设置里的候选窗位置摆。</summary>
+    public static Point Locate(Size windowSize, nint self, CandidatePlacement placement)
+    {
+        var work = WorkArea();
+        return Place(windowSize, self, AnchorFor(placement, windowSize, work), work);
+    }
+
+    private static Point Place(Size windowSize, nint self, Point anchor, Rectangle work)
+    {
+        var position = Clamp(anchor, windowSize, work);
 
         for (var attempt = 0; attempt < 4; attempt++)
         {
@@ -42,20 +54,30 @@ internal static class CaretLocator
             work);
     }
 
-    private static Point Anchor(Rectangle work)
+    private static Point AnchorFor(CandidatePlacement placement, Size size, Rectangle work) => placement switch
+    {
+        CandidatePlacement.Mouse => MouseAnchor(work),
+        // 钉在右下角：右下角是窗子自己的右上对齐点，减去宽高才落到工作区里。
+        CandidatePlacement.BottomRight => new Point(
+            work.Right - size.Width - Margin, work.Bottom - size.Height - Margin),
+        _ => CaretAnchor(work),
+    };
+
+    private static Point CaretAnchor(Rectangle work)
     {
         if (TryCaret(out var caret))
         {
             return new Point(caret.X, caret.Y + OffsetY);
         }
 
-        if (Native.GetCursorPos(out var cursor))
-        {
-            return new Point(cursor.X, cursor.Y + 24);
-        }
-
-        return new Point(work.Left + 40, work.Bottom - 160);
+        // 浏览器、Electron 这些不建系统光标，问 UIA 要；再取不到才落到鼠标。
+        return UiaCaret.TryCaret(out var focused) ? new Point(focused.X, focused.Y + OffsetY) : MouseAnchor(work);
     }
+
+    private static Point MouseAnchor(Rectangle work) =>
+        Native.GetCursorPos(out var cursor)
+            ? new Point(cursor.X, cursor.Y + 24)
+            : new Point(work.Left + 40, work.Bottom - 160);
 
     /// <summary>
     /// 开始菜单那种窗口自己也置顶，我们压不过它，只能看出该点上压着谁。
@@ -134,8 +156,28 @@ internal static class CaretLocator
             return false;
         }
 
+        var thread = Native.GetWindowThreadProcessId(foreground, 0);
+        if (TryThreadCaret(thread, out position))
+        {
+            return true;
+        }
+
+        // 编辑控件挂在另一个线程时，系统光标记在那个线程，跟着焦点窗口再查一次。
+        var focus = new Native.GUITHREADINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<Native.GUITHREADINFO>() };
+        if (!Native.GetGUIThreadInfo(thread, ref focus) || focus.hwndFocus == 0)
+        {
+            return false;
+        }
+
+        var focusThread = Native.GetWindowThreadProcessId(focus.hwndFocus, 0);
+        return focusThread != thread && TryThreadCaret(focusThread, out position);
+    }
+
+    private static bool TryThreadCaret(uint thread, out Point position)
+    {
+        position = default;
         var info = new Native.GUITHREADINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<Native.GUITHREADINFO>() };
-        if (!Native.GetGUIThreadInfo(Native.GetWindowThreadProcessId(foreground, 0), ref info) || info.hwndCaret == 0)
+        if (!Native.GetGUIThreadInfo(thread, ref info) || info.hwndCaret == 0)
         {
             return false;
         }

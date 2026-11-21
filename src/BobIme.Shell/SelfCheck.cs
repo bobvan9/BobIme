@@ -74,8 +74,16 @@ internal static class SelfCheck
 
         using var form = new CandidateForm();
         _ = form.Handle;
-        form.ShowComposition("k", candidates, engine.Page, engine.Pages);
-        Console.WriteLine($"候选窗 {form.Width}x{form.Height} @ ({form.Location.X},{form.Location.Y})");
+        foreach (var placement in Enum.GetValues<CandidatePlacement>())
+        {
+            form.Placement = placement;
+            // 同一段编码只定位一次，收起再摊开才看得出这一档摆在哪儿。
+            form.HideComposition();
+            form.ShowComposition("k", candidates, engine.Page, engine.Pages);
+            Console.WriteLine(
+                $"候选窗 {placement.Display()}：{form.Width}x{form.Height} @ ({form.Location.X},{form.Location.Y})");
+        }
+
         form.HideComposition();
 
         using var hook = new LowLevelKeyboardHook { OnKeyDown = _ => false };

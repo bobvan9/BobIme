@@ -37,8 +37,11 @@ internal sealed class LowLevelKeyboardHook : IDisposable
         }
     }
 
-    /// <summary>设置界面开着时全放行：不然按键录入框要接的那个键先被钩子吞了。</summary>
-    public bool Suspended { get; set; }
+    /// <summary>
+    /// 按键录入框那个窗口的句柄。前台窗口是它时一律放行，
+    /// 否则录入框要接的组合键会先被钩子吞掉；置 0 就没有这个闸门。
+    /// </summary>
+    public nint CaptureOwner { get; set; }
 
     public void Install()
     {
@@ -74,7 +77,7 @@ internal sealed class LowLevelKeyboardHook : IDisposable
         var isUp = message is Native.WM_KEYUP or Native.WM_SYSKEYUP;
 
         // 注入事件照常送给目标程序，否则我们自己上屏的字符会被这道闸门吃掉。
-        if ((raw.flags & Native.LLKHF_INJECTED) == 0 && !Suspended)
+        if ((raw.flags & Native.LLKHF_INJECTED) == 0 && !Capturing())
         {
             TrackTap(raw.vkCode, isDown, isUp);
 
@@ -142,6 +145,9 @@ internal sealed class LowLevelKeyboardHook : IDisposable
         _tapArmed = false;
         OnTap?.Invoke();
     }
+
+    /// <summary>只看前台窗口：Alt+Tab 切到别的程序之后，钩子照常工作。</summary>
+    private bool Capturing() => CaptureOwner != 0 && Native.GetForegroundWindow() == CaptureOwner;
 
     private static readonly uint[] CtrlVks = [Native.VK_CONTROL, 0xA2, 0xA3];
     private static readonly uint[] ShiftVks = [Native.VK_SHIFT, 0xA0, 0xA1];

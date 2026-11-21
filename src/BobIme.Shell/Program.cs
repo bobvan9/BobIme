@@ -26,10 +26,15 @@ internal sealed class ImeApplicationContext : ApplicationContext
     private readonly NotifyIcon _tray;
     private readonly ContextMenuStrip _menu;
     private readonly LowLevelKeyboardHook _hook;
+    private readonly FocusWatcher _focus;
     private readonly ToolStripMenuItem[] _punctItems;
     private readonly ToolStripMenuItem[] _modeItems;
     private readonly ImeController _controller;
     private AppSettings _settings;
+
+    /// <summary>进「英文窗口」名单时记下的那一档；离开时还回去，用户在中途自己切过就不还。</summary>
+    private InputMode? _held;
+    private nint _lastUserForeground;
     private SymbolForm? _symbols;
     private SettingsForm? _settingsForm;
     private readonly Icon _iconChinese;
@@ -46,6 +51,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
             PageSize = _settings.PageSize,
         };
         _candidates = new CandidateForm();
+        _candidates.Placement = _settings.CandidatePlacement;
         _candidates.PageRequested += next =>
         {
             if (_controller.TurnPage(next))
@@ -98,6 +104,12 @@ internal sealed class ImeApplicationContext : ApplicationContext
         _hook = new LowLevelKeyboardHook { OnKeyDown = OnKeyDown, OnTap = OnTapKey };
         _hook.TapKey = TapKeyOf(_settings.EnglishToggle);
         _hook.Install();
+
+        // 窗口事件钩子只管前台换人：开机时已经在前台的那个窗口自己补一次，不等事件。
+        _focus = new FocusWatcher { OnForeground = OnForegroundChanged };
+        _focus.Install();
+        _lastUserForeground = Native.GetForegroundWindow();
+        OnForegroundChanged(_lastUserForeground);
         SyncStatus();
     }
 
@@ -138,6 +150,41 @@ internal sealed class ImeApplicationContext : ApplicationContext
         };
         item.Click += (_, _) => SetMode(mode);
         return item;
+    }
+
+    /// <summary>
+    /// 换前台窗口时按「英文窗口」名单处置。这条跑在窗口事件的回调里，只读进程名，别在这里问 UIA。
+    /// 自家的窗口（设置界面、说明、消息框）不参与：它们是弹出来给人打字的，
+    /// 跟着名单走会把用户正在填的内容搅掉。任务栏、桌面这类 shell 窗口同样不参与：
+    /// 点托盘就会让它们成为前台，当成「离开名单」的话，菜单还没打开档位就先还回去了。
+    /// </summary>
+    private void OnForegroundChanged(nint hwnd)
+    {
+        if (hwnd == 0 || WindowInfo.IsOwnProcess(hwnd) || WindowInfo.IsShellWindow(hwnd))
+        {
+            return;
+        }
+
+        _lastUserForeground = hwnd;
+        var listed = WindowNames.Contains(_settings.EnglishWindows, WindowInfo.ExeName(hwnd));
+        if (listed)
+        {
+            if (EnglishOnFocus.ShouldForceEnglish(CurrentMode, _held))
+            {
+                _held = CurrentMode;
+                SetMode(InputMode.English);
+            }
+
+            return;
+        }
+
+        // 只有还是我们顶上来的英文才还回去；用户在窗口里手动切过的，以他那次为准。
+        var restore = EnglishOnFocus.ModeToRestore(_held);
+        _held = null;
+        if (restore is not null && CurrentMode == InputMode.English)
+        {
+            SetMode(restore.Value);
+        }
     }
 
     private void SetMode(InputMode mode)
@@ -257,8 +304,9 @@ internal sealed class ImeApplicationContext : ApplicationContext
     }
 
     /// <summary>
-    /// 设置界面开着时钩子整个放行：按键录入框要接的那个键不能先被钩子吞掉，
-    /// 而且这时候在设置框里打字也不该出候选窗。
+    /// 焦点在设置界面上时钩子一律放行：按键录入框要接的那个键不能先被钩子吞掉。
+    /// 判据取前台窗口而不是「对话框开着」——模态框挡不住 Alt+Tab，
+    /// 切到别的程序还照抄放行，就会顺手把那边的输入档、标点档改掉。
     /// </summary>
     private void ShowSettings()
     {
@@ -270,11 +318,11 @@ internal sealed class ImeApplicationContext : ApplicationContext
 
         _candidates.HideComposition();
         _symbols?.Hide();
-        _hook.Suspended = true;
         try
         {
-            using var dialog = new SettingsForm(_settings, _hasPinyin);
+            using var dialog = new SettingsForm(_settings, _hasPinyin, WindowInfo.ExeName(_lastUserForeground));
             _settingsForm = dialog;
+            _hook.CaptureOwner = dialog.Handle;
             if (dialog.ShowDialog() != DialogResult.OK)
             {
                 return;
@@ -288,6 +336,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
             catch (Exception ex)
             {
                 MessageBox.Show(
+                    dialog,
                     $"设置没能写入 {AppSettings.FilePath}：{ex.Message}\n本次改动只在当前这次运行里有效。",
                     "Bob 五笔");
             }
@@ -296,8 +345,8 @@ internal sealed class ImeApplicationContext : ApplicationContext
         }
         finally
         {
+            _hook.CaptureOwner = 0;
             _settingsForm = null;
-            _hook.Suspended = false;
         }
     }
 
@@ -306,6 +355,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
     {
         _controller.Settings = _settings;
         _controller.PageSize = _settings.PageSize;
+        _candidates.Placement = _settings.CandidatePlacement;
         _hook.TapKey = TapKeyOf(_settings.EnglishToggle);
         SyncStatus();
     }
@@ -346,6 +396,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
         if (disposing)
         {
             _hook.Dispose();
+            _focus.Dispose();
             _tray.Dispose();
             _menu.Dispose();
             _candidates.Dispose();

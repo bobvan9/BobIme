@@ -35,10 +35,20 @@ internal sealed class SettingsForm : Form
         Width = 64,
     };
     private readonly ComboBox _pageKeys = Picker();
+    private readonly ComboBox _candidatePlacement = Picker();
     private readonly ComboBox _placement = Picker();
     private readonly CheckBox _trayDouble = new() { Text = "托盘图标双击打开符号面板", AutoSize = true };
+    private readonly TextBox _englishWindows = new()
+    {
+        Multiline = true,
+        ScrollBars = ScrollBars.Vertical,
+        Width = 300,
+        Height = 84,
+        BackColor = Color.White,
+    };
 
-    public SettingsForm(AppSettings settings, bool hasPinyin)
+    /// <param name="lastForegroundExe">打开设置之前那个在前台程序的文件名，给「填入」按钮用；读不到就是 null。</param>
+    public SettingsForm(AppSettings settings, bool hasPinyin, string? lastForegroundExe)
     {
         _hasPinyin = hasPinyin;
         Settings = settings.Clone();
@@ -71,6 +81,13 @@ internal sealed class SettingsForm : Form
         AddRow("标点档", PunctPanel());
         AddRow("", Note("这两项在下次启动程序时生效；当前档位随时能在托盘菜单里切。"));
 
+        AddSection("英文窗口");
+        AddRow("程序名", _englishWindows);
+        AddRow("", ForegroundRow(lastForegroundExe));
+        AddRow("", Note(
+            "名单内的程序获得焦点时先切到英文档，离开时还回原来那档；在其中手动切过中文则以手动那次为准。"
+            + $"每行一个，只认文件名，最多 {WindowNames.Max} 个。"));
+
         AddSection("快捷键");
         AddRow("切换中英输入", KeyPanel(_englishKey));
         AddRow("切换中英标点", KeyPanel(_punctKey));
@@ -80,6 +97,8 @@ internal sealed class SettingsForm : Form
         AddSection("候选");
         AddRow("每页候选数", _pageSize);
         AddRow("翻页键", _pageKeys);
+        AddRow("候选窗位置", _candidatePlacement);
+        AddRow("", Note("跟光标时，浏览器、Electron 这类不建系统光标的程序改从无障碍接口取位置；两处都取不到才退回鼠标。"));
 
         AddSection("符号面板");
         AddRow("出现位置", _placement);
@@ -139,6 +158,25 @@ internal sealed class SettingsForm : Form
         clear.Click += (_, _) => box.Binding = KeyBinding.None;
         return Flow(box, clear);
     }
+
+    /// <summary>取打开设置之前的前台程序名：读不到就不给填，免得往名单里塞一条空项。</summary>
+    private Panel ForegroundRow(string? exe)
+    {
+        var hint = new Label
+        {
+            Text = exe is { Length: > 0 } ? $"打开设置前的前台程序：{exe}" : "打开设置前的前台程序：未读到",
+            AutoSize = true,
+            ForeColor = HintColor,
+            Margin = new Padding(0, 4, 8, 0),
+        };
+        var fill = new Button { Text = "填入", AutoSize = true, Enabled = exe is { Length: > 0 } };
+        fill.Click += (_, _) => _englishWindows.Text = string.Join(
+            Environment.NewLine, WindowNames.Normalize([.. WindowLines(_englishWindows.Text), exe!]));
+        return Flow(hint, fill);
+    }
+
+    private static string[] WindowLines(string text) =>
+        text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     private static Panel Flow(params Control[] controls)
     {
@@ -212,6 +250,11 @@ internal sealed class SettingsForm : Form
 
     private void FillPlacements()
     {
+        foreach (var value in Enum.GetValues<CandidatePlacement>())
+        {
+            _candidatePlacement.Items.Add(new Option(value.Display(), value));
+        }
+
         _placement.Items.Add(new Option("屏幕正中", PanelPlacement.Center));
         _placement.Items.Add(new Option("贴着光标", PanelPlacement.Caret));
     }
@@ -238,8 +281,10 @@ internal sealed class SettingsForm : Form
         _enableKey.Binding = settings.EnabledToggle;
         _pageSize.Value = settings.PageSize;
         Select(_pageKeys, settings.PageKeys);
+        Select(_candidatePlacement, settings.CandidatePlacement);
         Select(_placement, settings.SymbolPanelPlacement);
         _trayDouble.Checked = settings.TrayDoubleClickOpensSymbols;
+        _englishWindows.Text = string.Join(Environment.NewLine, settings.EnglishWindows);
     }
 
     private static void Select(ComboBox box, Enum value)
@@ -283,8 +328,10 @@ internal sealed class SettingsForm : Form
         draft.EnabledToggle = _enableKey.Binding;
         draft.PageSize = (int)_pageSize.Value;
         draft.PageKeys = (PageKeySet)((Option)_pageKeys.SelectedItem!).Value;
+        draft.CandidatePlacement = (CandidatePlacement)((Option)_candidatePlacement.SelectedItem!).Value;
         draft.SymbolPanelPlacement = (PanelPlacement)((Option)_placement.SelectedItem!).Value;
         draft.TrayDoubleClickOpensSymbols = _trayDouble.Checked;
+        draft.EnglishWindows = [.. WindowLines(_englishWindows.Text)];
         return draft.Normalized();
     }
 

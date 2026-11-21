@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text;
 using BobIme.Core;
 using BobIme.Shell.Interop;
@@ -52,6 +53,10 @@ internal sealed class CandidateForm : FloatingForm
     /// <summary>鼠标点了翻页箭头，参数是往后还是往前。</summary>
     public event Action<bool>? PageRequested;
 
+    /// <summary>候选窗摆哪儿，来自设置；翻页不重新定位，改了要等起新编码才见效。</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public CandidatePlacement Placement { get; set; } = CandidatePlacement.Caret;
+
     public CandidateForm()
     {
         BackColor = PanelColor;
@@ -99,7 +104,7 @@ internal sealed class CandidateForm : FloatingForm
             ? new Rectangle(arrowLeft + ArrowCell, Inset, ArrowCell, arrowHeight) : Rectangle.Empty;
 
         var position = relocate
-            ? CaretLocator.Locate(ClientSize, Handle)
+            ? CaretLocator.Locate(ClientSize, Handle, Placement)
             : CaretLocator.Keep(Location, ClientSize);
         Native.SetWindowPos(
             Handle, Native.HWND_TOPMOST, position.X, position.Y, 0, 0, Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);

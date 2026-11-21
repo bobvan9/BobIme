@@ -19,6 +19,24 @@ public enum PanelPlacement
     Caret,
 }
 
+/// <summary>候选窗摆在哪儿：贴着正在打字的光标、跟着鼠标，或者钉在桌面右下角。</summary>
+public enum CandidatePlacement
+{
+    Caret,
+    Mouse,
+    BottomRight,
+}
+
+public static class CandidatePlacementInfo
+{
+    public static string Display(this CandidatePlacement placement) => placement switch
+    {
+        CandidatePlacement.Mouse => "跟随鼠标",
+        CandidatePlacement.BottomRight => "桌面右下角",
+        _ => "跟随输入光标",
+    };
+}
+
 public static class PageKeySetInfo
 {
     private static readonly (uint Prev, uint Next)[] Pairs =
@@ -229,6 +247,44 @@ public readonly record struct KeyBinding
     }
 }
 
+/// <summary>
+/// 「英文窗口」名单的比对：只认文件名，写成 <c>wow</c>、<c>Wow.exe</c> 或者整条路径都算同一个，
+/// 大小写无所谓。名单里存的是用户填的样子，比对时才统一。
+/// </summary>
+public static class WindowNames
+{
+    /// <summary>再多也没法一一核对，给设置界面留个上限。</summary>
+    public const int Max = 32;
+
+    public static bool Contains(IReadOnlyList<string>? names, string? exeName)
+    {
+        var want = Key(exeName);
+        return want.Length > 0 && names is not null && names.Any(name => Key(name) == want);
+    }
+
+    /// <summary>空项丢掉，同一个程序的重复项只留先写的那条，超出上限截断。</summary>
+    public static List<string> Normalize(IEnumerable<string>? names)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var kept = new List<string>();
+        foreach (var name in names ?? [])
+        {
+            var text = (name ?? "").Trim();
+            if (text.Length == 0 || !seen.Add(Key(text)) || kept.Count >= Max)
+            {
+                continue;
+            }
+
+            kept.Add(text);
+        }
+
+        return kept;
+    }
+
+    private static string Key(string? text) =>
+        Path.GetFileNameWithoutExtension((text ?? "").Trim()).ToLowerInvariant();
+}
+
 /// <summary>虚拟键码与短记号、显示名的对照，只收字母数字和 F 键之外的那些。</summary>
 internal static class KeyTable
 {
@@ -336,10 +392,16 @@ public sealed class AppSettings
 
     public PageKeySet PageKeys { get; set; } = PageKeySet.Brackets;
 
+    /// <summary>候选窗的位置。默认贴光标，取不到光标才退到鼠标。</summary>
+    public CandidatePlacement CandidatePlacement { get; set; } = CandidatePlacement.Caret;
+
     public PanelPlacement SymbolPanelPlacement { get; set; } = PanelPlacement.Center;
 
     /// <summary>托盘图标双击开符号面板，默认关着，免得误碰。</summary>
     public bool TrayDoubleClickOpensSymbols { get; set; }
+
+    /// <summary>这些程序获得焦点时先切英文，离开时还回原来那档。空名单等于没这个功能。</summary>
+    public List<string> EnglishWindows { get; set; } = [];
 
     public static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BobIme", "settings.json");
@@ -354,8 +416,11 @@ public sealed class AppSettings
         EnabledToggle = EnabledToggle,
         PageSize = PageSize,
         PageKeys = PageKeys,
+        CandidatePlacement = CandidatePlacement,
         SymbolPanelPlacement = SymbolPanelPlacement,
         TrayDoubleClickOpensSymbols = TrayDoubleClickOpensSymbols,
+        // 名单要是共享同一个列表，设置界面里删一条就会当场改掉正在生效的那份。
+        EnglishWindows = [.. EnglishWindows],
     };
 
     public static AppSettings Load(string? path = null)
@@ -396,11 +461,17 @@ public sealed class AppSettings
             PageKeys = PageKeySet.Brackets;
         }
 
+        if (!Enum.IsDefined(CandidatePlacement))
+        {
+            CandidatePlacement = CandidatePlacement.Caret;
+        }
+
         if (!Enum.IsDefined(SymbolPanelPlacement))
         {
             SymbolPanelPlacement = PanelPlacement.Center;
         }
 
+        EnglishWindows = WindowNames.Normalize(EnglishWindows);
         return this;
     }
 

@@ -78,8 +78,10 @@ public class SettingsTests
                 EnabledToggle = KeyBinding.Combo(F12, ctrl: true, alt: true),
                 PageSize = 5,
                 PageKeys = PageKeySet.LeftRight,
+                CandidatePlacement = CandidatePlacement.BottomRight,
                 SymbolPanelPlacement = PanelPlacement.Caret,
                 TrayDoubleClickOpensSymbols = true,
+                EnglishWindows = ["Wow.exe", "chrome.exe"],
             };
 
             settings.Save(path);
@@ -92,8 +94,10 @@ public class SettingsTests
             Assert.Equal(settings.EnabledToggle, loaded.EnabledToggle);
             Assert.Equal(5, loaded.PageSize);
             Assert.Equal(PageKeySet.LeftRight, loaded.PageKeys);
+            Assert.Equal(CandidatePlacement.BottomRight, loaded.CandidatePlacement);
             Assert.Equal(PanelPlacement.Caret, loaded.SymbolPanelPlacement);
             Assert.True(loaded.TrayDoubleClickOpensSymbols);
+            Assert.Equal(["Wow.exe", "chrome.exe"], loaded.EnglishWindows);
         }
         finally
         {
@@ -125,11 +129,12 @@ public class SettingsTests
         var path = Path.Combine(Path.GetTempPath(), $"bobime-clamp-{Guid.NewGuid():N}.json");
         try
         {
-            File.WriteAllText(path, """{"pageSize": 40, "pageKeys": 99}""");
+            File.WriteAllText(path, """{"pageSize": 40, "pageKeys": 99, "candidatePlacement": 99}""");
             var loaded = AppSettings.Load(path);
 
             Assert.Equal(9, loaded.PageSize);
             Assert.Equal(PageKeySet.Brackets, loaded.PageKeys);
+            Assert.Equal(CandidatePlacement.Caret, loaded.CandidatePlacement);
         }
         finally
         {
@@ -293,6 +298,98 @@ public class SettingsTests
     [InlineData(0x20, false)]
     public void OnlyLeftRightModifierVksCanServeAsATapKey(uint vk, bool expected) =>
         Assert.Equal(expected, KeyBinding.IsModifierKey(vk));
+
+    [Theory]
+    [InlineData(CandidatePlacement.Caret, "跟随输入光标")]
+    [InlineData(CandidatePlacement.Mouse, "跟随鼠标")]
+    [InlineData(CandidatePlacement.BottomRight, "桌面右下角")]
+    public void CandidatePlacement_NamesTheThreePositions(CandidatePlacement placement, string label) =>
+        Assert.Equal(label, placement.Display());
+
+    [Theory]
+    [InlineData("Wow.exe")]
+    [InlineData("wow")]
+    [InlineData("WOW.EXE")]
+    [InlineData("  wow.exe  ")]
+    [InlineData(@"C:\Games\World of Warcraft\_retail\Wow.exe")]
+    public void AnySpellingOfTheProgramMatchesTheListedName(string name) =>
+        Assert.True(WindowNames.Contains(["Wow.exe"], name));
+
+    [Theory]
+    [InlineData("WowClassic.exe")]
+    [InlineData("notepad")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void OtherProgramsAreNotOnTheList(string? name) =>
+        Assert.False(WindowNames.Contains(["Wow.exe"], name));
+
+    [Fact]
+    public void EmptyListMatchesNothing()
+    {
+        Assert.False(WindowNames.Contains([], "notepad.exe"));
+        Assert.False(WindowNames.Contains(null, "notepad.exe"));
+    }
+
+    [Fact]
+    public void Normalize_KeepsTheFirstSpellingAndDropsBlanks()
+    {
+        var kept = WindowNames.Normalize(["  ", "Wow.exe", "wow", "notepad.exe", "NOTEPAD", "", "chrome"]);
+
+        Assert.Equal(["Wow.exe", "notepad.exe", "chrome"], kept);
+    }
+
+    [Fact]
+    public void Normalize_StopsAtTheLimit() =>
+        Assert.Equal(WindowNames.Max, WindowNames.Normalize(
+            Enumerable.Range(1, WindowNames.Max * 3).Select(i => $"p{i}.exe")).Count);
+
+    [Fact]
+    public void DraftGetsItsOwnCopyOfTheNameList()
+    {
+        var live = new AppSettings { EnglishWindows = ["Wow.exe"] };
+        var draft = live.Clone();
+        draft.EnglishWindows.Add("chrome.exe");
+
+        // 设置界面里删一条不能当场改掉正在生效的那份。
+        Assert.Equal(["Wow.exe"], live.EnglishWindows);
+    }
+
+    [Theory]
+    [InlineData(InputMode.Mixed, null, true)]
+    [InlineData(InputMode.Wubi, null, true)]
+    [InlineData(InputMode.English, null, false)]
+    [InlineData(InputMode.Wubi, InputMode.Mixed, false)]
+    [InlineData(InputMode.English, InputMode.Mixed, false)]
+    public void EnteringAListedWindow_DecidesWhetherToForceEnglish(
+        InputMode current, InputMode? held, bool expected) =>
+        Assert.Equal(expected, EnglishOnFocus.ShouldForceEnglish(current, held));
+
+    [Fact]
+    public void LeavingAListedWindow_HandsBackWhatWasTaken()
+    {
+        Assert.Equal(InputMode.Mixed, EnglishOnFocus.ModeToRestore(InputMode.Mixed));
+
+        // 没替谁撑过英文就没什么可还的，用户自己的档位不该被搅动。
+        Assert.Null(EnglishOnFocus.ModeToRestore(null));
+    }
+
+    [Theory]
+    [InlineData("Shell_TrayWnd")]
+    [InlineData("shell_traywnd")]
+    [InlineData("XamlExplorerHostIslandWindow")]
+    [InlineData("WorkerW")]
+    [InlineData("Progman")]
+    public void ShellWindows_AreRecognisedWhateverTheCase(string className) =>
+        Assert.True(ShellWindows.IsShell(className));
+
+    [Theory]
+    [InlineData("Wow")]
+    [InlineData("CabinetWClass")]
+    [InlineData("Notepad")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void ProgramWindows_AreNotShellWindows(string? className) =>
+        Assert.False(ShellWindows.IsShell(className));
 
     private static AppSettings Conflicting() => new()
     {
