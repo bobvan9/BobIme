@@ -1,0 +1,25 @@
+name: 构建与测试
+
+# 推到 main 或提 PR 就跑这一条，只装环境 + 跑单测，不出包也不发版；
+# 打包发版仍然走 v* 标签上的 release.yml，两条分工别混。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.x"
+
+      - name: 测试
+        run: dotnet test --nologo

@@ -274,6 +274,9 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
   否则包里带的源码号是上一次提交。
 - `.github/workflows/release.yml` 就是这套流程的自动化：推 `v*` 标签 → 核对两处版本号与标签一致 →
   `dotnet test` → 装 Inno Setup → `installer/build.sh` → 跑一次 `--check` → 建/更新 Release 并传安装包。
+- `.github/workflows/ci.yml` 只管推 main 和 PR 时跑一遍 `dotnet test`，不出包也不发版，
+  README 顶上那枚构建徽章指的就是它；发版徽章走 `v*` 标签那条。两条别合一条，
+  合了以后每次推 main 都会去核对版本号、装 Inno，白等三十秒还可能误建 Release。
 - 现在是 `PrivilegesRequired=admin` 的全用户安装，默认目录 `C:\Program Files\BobIme`（要写系统目录，
   所以安装和升级都会弹一次 UAC）；开机自启写 HKLM 的 `Run` 项，对所有登录用户生效。
   安装时会顺手删掉早先按用户安装留下的 HKCU `Run` 项，免得登录后拉起两份进程挂两个钩子。

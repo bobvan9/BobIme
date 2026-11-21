@@ -2,6 +2,10 @@
 
 **五笔和拼音一起打，不用切输入法。**
 
+[![构建与测试](https://github.com/bobvan9/BobIme/actions/workflows/ci.yml/badge.svg)](https://github.com/bobvan9/BobIme/actions/workflows/ci.yml)
+[![最新版本](https://img.shields.io/github/v/release/bobvan9/BobIme)](https://github.com/bobvan9/BobIme/releases/latest)
+[![GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+
 ![五笔拼音混排的候选窗](docs/images/candidate-mixed.png)
 
 上面这张图正在打 `kan`：1–4 是五笔候选，5–9 是拼音候选，排在同一条候选栏里。

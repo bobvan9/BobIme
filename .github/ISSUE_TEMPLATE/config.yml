@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 用法和已知限制
+    url: https://github.com/bobvan9/BobIme#已知限制
+    about: 先看这一节，管理员权限程序、独占全屏程序、记事本的字体回退这三类不是缺陷

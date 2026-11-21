@@ -1,0 +1,31 @@
+name: 功能建议
+description: 想加的能力，或者希望改的现有行为
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        这个输入法的取向写在 [README](https://github.com/bobvan9/BobIme) 开头几段：码表直查、不做字根拆分和容错、
+        不上云、不注册成系统输入法。建议落在这个取向之外的也能提，但先说清楚你要解决的具体问题。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 现在卡在哪
+      description: 什么场景下做不到什么，越具体越好
+      placeholder: "打长句时只能一个词一个词选，我想整句上屏。"
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你希望它变成什么样
+      placeholder: "按某个键把当前编码里已选的字连着上屏。"
+    validations:
+      required: true
+  - type: textarea
+    id: alternative
+    attributes:
+      label: 现在怎么绕（可选）
+      placeholder: "用别的输入法，或者手动连着按数字键。"
+    validations:
+      required: false

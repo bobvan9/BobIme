@@ -1,0 +1,98 @@
+name: 问题反馈
+description: 打不出字、候选不对、上屏内容错、档位被乱切
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        填之前先对一眼 [README 的「已知限制」](https://github.com/bobvan9/BobIme#已知限制)，
+        这三类不是缺陷：以管理员权限运行的程序收不到按键、独占全屏程序里没有候选窗、
+        记事本里打过一个标点后接着上屏的中文显示成空心方框。
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 托盘图标右键 →「关于」里那一行，形如 `1.1.3+7ed8e05...`
+      placeholder: "1.1.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 出问题的输入档
+      description: 托盘菜单里当前点亮的圆点
+      options:
+        - 混合输入
+        - 五笔输入
+        - 拼音输入
+        - 英文输入
+        - 不确定
+    validations:
+      required: true
+  - type: dropdown
+    id: symptom
+    attributes:
+      label: 现象
+      options:
+        - 某个词打不出来（请填编码和你期望的字）
+        - 候选顺序或候选内容不对
+        - 上屏的字是错的
+        - 中英文档被乱切
+        - 标点档不对
+        - 候选窗位置/显示不对
+        - 快捷键没反应或误触发
+        - 托盘菜单、设置、说明里的功能不对
+        - 安装 / 卸载 / 升级问题
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: app
+    attributes:
+      label: 在哪个程序里出现的
+      description: 程序名和窗口标题就够，比如「微信聊天框」「Chrome 网页输入框」「记事本」「某个全屏游戏」
+      placeholder: "记事本"
+    validations:
+      required: true
+  - type: dropdown
+    id: elevated
+    attributes:
+      label: 那个程序是以管理员权限跑的吗
+      description: 任务管理器里看那一行的「提升」列。是的话属于 Windows 的限制，见上面的「已知限制」
+      options:
+        - 不是
+        - 是
+        - 不清楚
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      description: 敲了哪几个键、当前输入档、按了什么键确认，按顺序写就行
+      placeholder: |
+        1. 混合输入档
+        2. 敲 pofang
+        3. 候选里没有「破防」
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望和实际
+      placeholder: "期望：候选里出「破防」。实际：只有「破房」。"
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: 你的设置（可选）
+      description: 粘 `%APPDATA%\BobIme\settings.json` 的内容，或者只说改了哪几项。里面是档位、快捷键和按程序定档的规则表，不含你的私人词
+      render: json
+      placeholder: |
+        {
+          "StartupMode": "Mixed",
+          "WindowRules": [ { "Name": "notepad", "Mode": "Chinese" } ]
+        }
+    validations:
+      required: false
