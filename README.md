@@ -105,10 +105,22 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe
 | 文件 | 来源 | 条数 |
 | --- | --- | --- |
 | `data/dict/jidian86.tsv` | [极点 86 词库](https://github.com/KyleBing/rime-wubi86-jidian)（主表 + 扩展表合并，MIT） | 91462 |
-| `data/dict/pinyin_base.tsv` | [rime-ice](https://github.com/iDvel/rime-ice) 的 `base` + `8105` + `41448` 三张表合并 | 395529 |
+| `data/dict/pinyin_base.tsv` | [rime-ice](https://github.com/iDvel/rime-ice) 的 `base` + `8105` + `41448` 三张表合并（GPL-3.0） | 395529 |
 
 两份都在原表基础上做过清洗：挂在编码上的中文标点、带声调的拉丁字母、日语假名整块不加载，拼音还按词频和长度筛了一遍。
 清洗规则和重新生成方式写在 [docs/internals.md](docs/internals.md)。
+
+## 许可
+
+代码和自带的两份词库都以 **GPL-3.0-only** 发布，全文见 [LICENSE](LICENSE)。你拿走代码或词库再分发，
+同样要按 GPL-3.0 公开对应源码，别的没有额外要求。
+
+之所以整体走 GPL：`data/dict/pinyin_base.tsv` 派生自 [rime-ice](https://github.com/iDvel/rime-ice)
+（GPL-3.0-only），派生数据按 GPL 分发就把整份产品带进同一义务，不如一份许可走到底，省得两套声明互相误读。
+极点 86 那份是 MIT，MIT 兼容 GPL，合并分发不冲突。
+
+「派生作品要给出对应源码」这条靠仓库里的转换脚本满足：`tools/conv_pinyin.pl` 和 `tools/conv_wubi.pl`
+从上游原表重新生成这两份 TSV，用法写在 [docs/internals.md](docs/internals.md)。
 
 ## 更多
 
