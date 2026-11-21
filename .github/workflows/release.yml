@@ -1,0 +1,72 @@
+name: 出安装包并发版
+
+# 推一个 v* 的 tag 就跑这一条：核对版本号 -> 测试 -> 自包含发布 -> Inno Setup 编包 -> 建 Release 挂附件。
+# 本机出包仍旧用 bash installer/build.sh，这里只是把同一串步骤搬到 tag 上，省得换机器忘了同步版本。
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    steps:
+      # 取全部历史：Release 正文用的是 annotated tag 的说明，浅克隆那个 tag 对象拿不到。
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.x"
+
+      - name: 核对版本号
+        shell: bash
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          from_csproj=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/BobIme.Shell/BobIme.Shell.csproj | tr -d '\r\n')
+          from_iss=$(sed -n 's:.*MyAppVersion "\(.*\)".*:\1:p' installer/BobIme.iss | tr -d '\r\n')
+          if [ "$ver" != "$from_csproj" ] || [ "$ver" != "$from_iss" ]; then
+            echo "tag 是 v$ver，但 csproj 写的是 $from_csproj、iss 写的是 $from_iss，三处得一致才能发。" >&2
+            exit 1
+          fi
+          echo "VERSION=$ver" >> "$GITHUB_ENV"
+
+      - name: 测试
+        run: dotnet test --nologo
+
+      - name: 装 Inno Setup
+        shell: pwsh
+        run: |
+          $paths = @(
+            "$env:LOCALAPPDATA/Programs/Inno Setup 6/ISCC.exe",
+            "C:/Program Files (x86)/Inno Setup 6/ISCC.exe",
+            "C:/Program Files/Inno Setup 6/ISCC.exe")
+          if (-not ($paths | Where-Object { Test-Path $_ })) {
+            choco install innosetup --no-progress -y
+          }
+
+      - name: 出包
+        run: bash installer/build.sh
+
+      - name: 自检产物
+        run: ./artifacts/publish/BobIme.Shell.exe --check
+
+      - name: 建 Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          file="artifacts/installer/BobIme-Setup-$VERSION.exe"
+          ls -l "$file"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$file" --clobber
+          else
+            notes=$(git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" | sed '/^[[:space:]]*$/d')
+            [ -n "$notes" ] || notes="见 $GITHUB_REF_NAME 的提交历史。"
+            printf '%s\n' "$notes" > release-notes.md
+            gh release create "$GITHUB_REF_NAME" --title "Bob 五笔 $VERSION" --notes-file release-notes.md "$file"
+          fi
