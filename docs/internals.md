@@ -306,6 +306,9 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
   紧接着由注入上屏中文」之后没有重算字体回退。Word 和 Qoder 走各自的文本渲染，不受影响。
   别再往码表、代理对、`SendInput` 通路上找，那边查过都是对的。
 - 提权窗口里收不到键：低级钩子被 UIPI 挡住，管理员权限运行的程序得另想办法。
+- **默认输入语言得是「英语(美国)」**，装完先改（README「安装」第 2 步）。两条原因：编码字符按物理键位取
+  （`(char)('a' + key.Vk - VirtualKey.A)`，`src/BobIme.Shell/ImeController.cs:172`），换成非 QWERTY 布局码就乱了；
+  默认布局留给微软拼音那类系统输入法，它会和钩子两边同时组字。
 
 ## 验证的手法和边界
 
