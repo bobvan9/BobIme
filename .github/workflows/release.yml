@@ -65,6 +65,9 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "$file" --clobber
           else
+            # tag 触发时 checkout 只把 HEAD 指到提交上，annotated tag 对象未必留下本地 ref；
+            # 不先补这一手，%(contents) 拿到的是提交正文，Release 会说成上一个功能而不是这次修了什么。
+            git fetch --force --tags origin
             notes=$(git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" | sed '/^[[:space:]]*$/d')
             [ -n "$notes" ] || notes="见 $GITHUB_REF_NAME 的提交历史。"
             printf '%s\n' "$notes" > release-notes.md
