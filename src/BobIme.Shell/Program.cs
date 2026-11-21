@@ -33,11 +33,13 @@ internal sealed class ImeApplicationContext : ApplicationContext
     private AppSettings _settings;
 
     /// <summary>
-    /// 进名单时记下的那一档（离开时还回去）和我们顶上来的那一档。
-    /// 两个都要记：用户在中途自己切过的话，当前档位已经不是我们顶的那一档，就不该还。
+    /// 进表时记下的那一档（离开时还回去）、我们顶上来的那一档、以及顶那一档的是哪个窗口。
+    /// 三个都要记：用户在中途自己切过的话，当前档位已经不是我们顶的那一档，就不该还；
+    /// 同一个窗口再报一次前台事件也不该把他切回来的那一次盖掉。
     /// </summary>
     private InputMode? _held;
     private InputMode? _forced;
+    private nint _forcedWindow;
     private nint _lastUserForeground;
     private SymbolForm? _symbols;
     private SettingsForm? _settingsForm;
@@ -159,8 +161,8 @@ internal sealed class ImeApplicationContext : ApplicationContext
     /// <summary>
     /// 换前台窗口时按「按程序定档」规则表处置。这条跑在窗口事件的回调里，只读进程名，别在这里问 UIA。
     /// 自家的窗口（设置界面、说明、消息框）不参与：它们是弹出来给人打字的，
-    /// 跟着名单走会把用户正在填的内容搅掉。任务栏、桌面这类 shell 窗口同样不参与：
-    /// 点托盘就会让它们成为前台，当成「离开名单」的话，菜单还没打开档位就先还回去了。
+    /// 跟着规则表走会把用户正在填的内容搅掉。任务栏、桌面这类 shell 窗口同样不参与：
+    /// 点托盘就会让它们成为前台，当成「离开表」的话，菜单还没打开档位就先还回去了。
     /// </summary>
     private void OnForegroundChanged(nint hwnd)
     {
@@ -173,10 +175,12 @@ internal sealed class ImeApplicationContext : ApplicationContext
         var target = ModeOnTarget(hwnd);
         if (target is not null)
         {
-            if (ModeOnFocus.ShouldApply(CurrentMode, _held, target))
+            if (ModeOnFocus.ShouldApply(CurrentMode, target, hwnd == _forcedWindow))
             {
-                _held = CurrentMode;
-                _forced = target;
+                // 记下的是用户自己那一档：表里两个程序来回切时别把上一个窗口顶的档当成他的选择。
+                _held ??= CurrentMode;
+                _forced = target.Value;
+                _forcedWindow = hwnd;
                 SetMode(target.Value);
             }
 
@@ -186,6 +190,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
         var restore = ModeOnFocus.ModeToRestore(_held, _forced, CurrentMode);
         _held = null;
         _forced = null;
+        _forcedWindow = 0;
         if (restore is not null)
         {
             SetMode(restore.Value);

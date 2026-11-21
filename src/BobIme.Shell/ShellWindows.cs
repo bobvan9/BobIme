@@ -15,6 +15,9 @@ public static class ShellWindows
         // 开始菜单和搜索面板。UWP 内容窗口挂在 ApplicationFrameWindow 下面，
         // 顶层直接是这两个类名的只有 shell 自己的那几个，所以不会误伤名单里的应用。
         "Windows.UI.Core.CoreWindow", "ApplicationWindow",
+        // Alt+Tab 期间的过场窗口，也是 explorer.exe 的。它们会夹在真窗口的前后各报一次前台事件，
+        // 落在后面那一次要是当成「离开规则表」，刚顶上去的档位当场就被还回去了。
+        "ForegroundStaging", "ApplicationManager_DesktopShellWindow",
         // 桌面本体。
         "Progman", "WorkerW",
     ];

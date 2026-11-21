@@ -413,18 +413,20 @@ public class SettingsTests
     }
 
     [Theory]
-    [InlineData(InputMode.Mixed, null, InputMode.English, true)]
-    [InlineData(InputMode.Wubi, null, InputMode.English, true)]
-    [InlineData(InputMode.Pinyin, null, InputMode.English, true)]
-    [InlineData(InputMode.English, null, InputMode.English, false)]
-    [InlineData(InputMode.English, null, InputMode.Mixed, true)]
-    [InlineData(InputMode.Wubi, null, InputMode.Wubi, false)]
-    [InlineData(InputMode.Wubi, InputMode.Mixed, InputMode.English, false)]
-    [InlineData(InputMode.Mixed, null, null, false)]
-    [InlineData(InputMode.English, InputMode.Mixed, null, false)]
+    [InlineData(InputMode.Mixed, InputMode.English, false, true)]
+    [InlineData(InputMode.Wubi, InputMode.English, false, true)]
+    [InlineData(InputMode.Pinyin, InputMode.English, false, true)]
+    [InlineData(InputMode.English, InputMode.Mixed, false, true)]
+    [InlineData(InputMode.English, InputMode.English, false, false)]
+    [InlineData(InputMode.Wubi, InputMode.Wubi, false, false)]
+    [InlineData(InputMode.Mixed, InputMode.English, true, false)]
+    [InlineData(InputMode.Mixed, null, false, false)]
+    [InlineData(InputMode.English, null, true, false)]
     public void EnteringAListedWindow_DecidesWhetherToSwitch(
-        InputMode current, InputMode? held, InputMode? target, bool expected) =>
-        Assert.Equal(expected, ModeOnFocus.ShouldApply(current, held, target));
+        InputMode current, InputMode? target, bool alreadyForcedOn, bool expected) =>
+        // 表里两个程序来回切（WoW 英文档 ↔ 微信中文档）时，后进去那一个照样要顶档；
+        // 只有同一个窗口再报一次事件才不动，好让用户在里头自己切的那一次留着。
+        Assert.Equal(expected, ModeOnFocus.ShouldApply(current, target, alreadyForcedOn));
 
     [Theory]
     [InlineData(InputMode.Mixed, InputMode.English, InputMode.English, InputMode.Mixed)]
@@ -460,6 +462,8 @@ public class SettingsTests
     [InlineData("Shell_TrayWnd")]
     [InlineData("shell_traywnd")]
     [InlineData("XamlExplorerHostIslandWindow")]
+    [InlineData("ForegroundStaging")]
+    [InlineData("ApplicationManager_DesktopShellWindow")]
     [InlineData("WorkerW")]
     [InlineData("Progman")]
     public void ShellWindows_AreRecognisedWhateverTheCase(string className) =>

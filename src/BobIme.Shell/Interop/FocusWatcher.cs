@@ -14,7 +14,7 @@ internal sealed class FocusWatcher : IDisposable
     /// <summary>新的前台窗口句柄。回调这一路要快，别在这里读进程名以外的东西。</summary>
     public Action<nint>? OnForeground { get; init; }
 
-    /// <summary>装不上不影响输入法本身，只是「英文窗口」名单不生效，所以返回而不抛。</summary>
+    /// <summary>装不上不影响输入法本身，只是「按程序定档」的规则表不生效，所以返回而不抛。</summary>
     public bool Install()
     {
         _handle = Native.SetWinEventHook(
