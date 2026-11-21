@@ -1,6 +1,6 @@
 ﻿; Bob 五笔 安装脚本：先跑 installer/build.sh 产出 artifacts\publish，再用 ISCC 编译本文件。
 #define MyAppName "Bob 五笔"
-#define MyAppVersion "1.1.2"
+#define MyAppVersion "1.1.3"
 #define MyAppPublisher "bob"
 #define MyAppExeName "BobIme.Shell.exe"
 #define PublishDir "..\artifacts\publish"
@@ -60,6 +60,10 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 [Files]
 ; 自包含发布里带的是 .NET 运行时，pdb 对用户没用，打包时排掉。
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[InstallDelete]
+; 五笔码表换成极点 86 之后旧文件名没人引用了，升级时顺手删掉，免得装机目录里多留一份 1 MB 的废物。
+Type: files; Name: "{app}\dict\jisuan43.tsv"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"

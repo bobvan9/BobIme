@@ -477,7 +477,7 @@ internal static class Program
         }
     }
 
-    internal static string DefaultDictPath => Path.Combine(AppContext.BaseDirectory, "dict", "jisuan43.tsv");
+    internal static string DefaultDictPath => Path.Combine(AppContext.BaseDirectory, "dict", "jidian86.tsv");
 
     internal static string DefaultPinyinPath => Path.Combine(AppContext.BaseDirectory, "dict", "pinyin_base.tsv");
 

@@ -15,7 +15,7 @@ if (argv.Length == 0 || argv[0] is "-h" or "--help")
     return 1;
 }
 
-var dictPath = ParsePath(argv, "--dict", "jisuan43.tsv");
+var dictPath = ParsePath(argv, "--dict", "jidian86.tsv");
 if (dictPath is null || !File.Exists(dictPath))
 {
     Console.Error.WriteLine($"找不到码表文件：{dictPath ?? "(未找到 data/dict 下的码表)"}");

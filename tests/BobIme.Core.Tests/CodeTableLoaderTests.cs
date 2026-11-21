@@ -93,7 +93,7 @@ public class CodeTableLoaderTests
     [Fact]
     public void Load_DropsBareLatinLetterEntries()
     {
-        // 极爽的声调字母块：ā á ǎ à 连 ASCII 的 a 一起挂在 copa 上，全部不加载。
+        // 极点这类码表的声调字母块：ā á ǎ à 连 ASCII 的 a 一起挂在 copa 上，全部不加载。
         var table = Load($"{(char)0x0101}\tcopa\n{(char)0xE9}\tcopa\na\tcopa\n中\tk");
 
         Assert.Equal(1, table.Count);

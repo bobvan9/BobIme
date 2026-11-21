@@ -1,7 +1,7 @@
 namespace BobIme.Core;
 
 /// <summary>
-/// 码表的读法：五笔按码长分带查（简码先出），拼音按词频降序线性扫（高频词先出）。
+/// 码表的读法：五笔按码长分带查（简码先出），拼音按首字母分桶、桶内词频降序查（高频词先出）。
 /// </summary>
 public sealed record CodeTableFormat(int MaxCodeLength, CandidateSource Source, bool RankByWeight)
 {
@@ -12,15 +12,12 @@ public sealed record CodeTableFormat(int MaxCodeLength, CandidateSource Source, 
 
 /// <summary>
 /// 码表。五笔这类没有权重列的按码长分带存储，查询前缀时短码（简码）先出；
-/// 拼音这类带词频的按词频排一次，查前缀时高频词先出。
+/// 拼音这类带词频的按首字母分桶、桶内词频降序，查前缀时高频词先出。
 /// </summary>
 public sealed class CodeTable
 {
-    /// <summary>按词频排序查询时最多扫多少条，防止生僻前缀把一次按键拖慢。</summary>
-    private const int WeightScanBudget = 60_000;
-
     private readonly Candidate[][] _bands;
-    private readonly Candidate[] _byWeight;
+    private readonly Candidate[][] _byHead;
 
     public CodeTable(IReadOnlyList<Candidate> entries, CodeTableFormat? format = null)
     {
@@ -32,12 +29,24 @@ public sealed class CodeTable
         if (format.RankByWeight)
         {
             // 词频降序；同权重退回码表原始次序，保证每轮加载结果一致。
-            _byWeight = [.. entries.OrderByDescending(e => e.Weight).ThenBy(e => e.Index)];
+            // 前缀不可能跨首字母命中，所以按首字母切成 26 桶，一次按键只扫其中一个桶。
             _bands = [];
+            var heads = new List<Candidate>[26];
+            for (var i = 0; i < heads.Length; i++)
+            {
+                heads[i] = [];
+            }
+
+            foreach (var e in entries.OrderByDescending(e => e.Weight).ThenBy(e => e.Index))
+            {
+                heads[e.Code[0] - 'a'].Add(e);
+            }
+
+            _byHead = [.. heads.Select(h => h.ToArray())];
         }
         else
         {
-            _byWeight = [];
+            _byHead = [];
             _bands = new Candidate[MaxCodeLength + 1][];
             for (var len = 1; len <= MaxCodeLength; len++)
             {
@@ -109,16 +118,22 @@ public sealed class CodeTable
         return result;
     }
 
-    /// <summary>按词频查：整张表从高频往低扫，够一页就停。</summary>
+    /// <summary>按词频查：只扫前缀首字母那一桶，桶内从高频往低走，够一页就停。</summary>
     private IReadOnlyList<Candidate> QueryByWeight(string prefix, int limit)
     {
+        // 加载器把编码统一成小写字母，所以非小写开头的前缀必然没有命中。
+        if (prefix[0] is < 'a' or > 'z')
+        {
+            return [];
+        }
+
+        var bucket = _byHead[prefix[0] - 'a'];
         var result = new List<Candidate>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var budget = Math.Min(_byWeight.Length, WeightScanBudget);
 
-        for (var i = 0; i < budget && result.Count < limit; i++)
+        for (var i = 0; i < bucket.Length && result.Count < limit; i++)
         {
-            var candidate = _byWeight[i];
+            var candidate = bucket[i];
             if (candidate.Code.StartsWith(prefix, StringComparison.Ordinal) && seen.Add(candidate.Text))
             {
                 result.Add(candidate);

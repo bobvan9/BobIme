@@ -104,7 +104,7 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe
 
 | 文件 | 来源 | 条数 |
 | --- | --- | --- |
-| `data/dict/jisuan43.tsv` | 极爽词库 4.3 修订版（作者：窝子） | 87521 |
+| `data/dict/jidian86.tsv` | [极点 86 词库](https://github.com/KyleBing/rime-wubi86-jidian)（主表 + 扩展表合并，MIT） | 91462 |
 | `data/dict/pinyin_base.tsv` | [rime-ice](https://github.com/iDvel/rime-ice) 的 `base` + `8105` + `41448` 三张表合并 | 395529 |
 
 两份都在原表基础上做过清洗：挂在编码上的中文标点、带声调的拉丁字母、日语假名整块不加载，拼音还按词频和长度筛了一遍。

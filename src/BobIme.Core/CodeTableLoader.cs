@@ -73,7 +73,7 @@ public static class CodeTableLoader
             return null;
         }
 
-        // 极爽把 ā á ǎ à a 整块挂在 copa、copu 这些编码上，混输有了真拼音表之后就是纯噪声。
+        // 极点这类码表把 ā á ǎ à a 整块挂在 copa、copu 这些编码上，混输有了真拼音表之后就是纯噪声。
         if (IsBareLatinLetter(word))
         {
             return null;
@@ -109,7 +109,7 @@ public static class CodeTableLoader
     private static bool IsLatinLetter(char c) =>
         c is >= 'a' and <= 'z' or >= 'A' and <= 'Z' || (c >= 0x00C0 && c <= 0x024F);
 
-    /// <summary>极爽这类码表会把中文标点、声调符号按编码挂成词条，统一在加载时挡掉。</summary>
+    /// <summary>极点这类码表会把中文标点、声调符号按编码挂成词条，统一在加载时挡掉。</summary>
     private static bool StartsWithPunctuation(string word)
     {
         var first = word[0];

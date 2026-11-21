@@ -32,6 +32,43 @@ public class CodeTableTests
     [Fact]
     public void Query_LimitNonPositiveReturnsEmpty() => Assert.Empty(Table.Query("a", 0));
 
+    [Fact]
+    public void PinyinQuery_OrdersAcrossCodeLengthsByWeight() =>
+        Assert.Equal(["是", "说", "时", "上", "少", "手机"], TestDict.SyntheticPinyin.Query("sh").Select(c => c.Text));
+
+    [Fact]
+    public void PinyinQuery_ReadsOnlyThePrefixBucket() =>
+        Assert.DoesNotContain("咱", TestDict.SyntheticPinyin.Query("s").Select(c => c.Text));
+
+    [Fact]
+    public void PinyinQuery_FindsLowWeightEntryDeepInABigBucket()
+    {
+        // 六万条以上噪声压在前头，曾经扫到封顶就停的写法就会把末尾那条丢掉。
+        var noisy = Enumerable.Range(0, 60_001).Select(i => new Candidate($"词{i}", "shi", i, 1_000_000)).ToList();
+        noisy.Add(new("手机", "shouji", 60_002, 1));
+        var table = new CodeTable(noisy, CodeTableFormat.Pinyin);
+
+        Assert.Equal("手机", table.Query("shou").Select(c => c.Text).SingleOrDefault());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("1")]
+    public void PinyinQuery_RejectsPrefixThatCannotStartACode(string prefix) =>
+        Assert.Empty(TestDict.SyntheticPinyin.Query(prefix));
+
+    [Theory]
+    [InlineData("pofang", "破防")]
+    [InlineData("neijuan", "内卷")]
+    [InlineData("tangping", "躺平")]
+    [InlineData("dazi", "搭子")]
+    public void RealPinyin_HoldsWordsRankedBelowTheOldScanCap(string code, string expected) =>
+        // 这几个词一直在表里，但全局词频排在八万到二十万位，扫到六万条封顶的旧写法永远查不到。
+        Assert.Contains(expected, TestDict.Pinyin.Query(code).Select(c => c.Text));
+
+    [Fact]
+    public void RealPinyin_HighestWeightComesFirst() => Assert.Equal("的", TestDict.Pinyin.Query("de")[0].Text);
+
     [Theory]
     [InlineData("k", "中")]
     [InlineData("r", "的")]
@@ -41,6 +78,15 @@ public class CodeTableTests
     [InlineData("ltif", "输入法")]
     public void RealDict_FirstCandidateMatchesKnownCode(string code, string expected) =>
         Assert.Equal(expected, TestDict.Table.Query(code)[0].Text);
+
+    [Theory]
+    [InlineData("ruuj", "抖音")]
+    [InlineData("hktf", "点赞")]
+    [InlineData("kfsg", "吐槽")]
+    [InlineData("tmwy", "微信")]
+    public void RealDict_HoldsTheRecentWords(string code, string expected) =>
+        // 换极点 86 就是为了这批新词，老词库这些码位里根本没有这些字面。
+        Assert.Contains(expected, TestDict.Table.Query(code).Select(c => c.Text));
 
     [Fact]
     public void RealDict_ExcludesCodeTablePunctuationEntries()

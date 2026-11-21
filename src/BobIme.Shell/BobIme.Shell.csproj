@@ -5,7 +5,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="..\..\data\dict\jisuan43.tsv" Link="dict\jisuan43.tsv" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\data\dict\jidian86.tsv" Link="dict\jidian86.tsv" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\data\dict\pinyin_base.tsv" Link="dict\pinyin_base.tsv" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\assets\app.ico" Link="app.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\assets\app-en.ico" Link="app-en.ico" CopyToOutputDirectory="PreserveNewest" />
@@ -17,7 +17,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
     <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
-    <Version>1.1.2</Version>
+    <Version>1.1.3</Version>
     <Product>Bob 五笔</Product>
     <Company>Bob</Company>
     <Copyright>© Bob</Copyright>
