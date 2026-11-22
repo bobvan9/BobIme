@@ -296,6 +296,8 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
   本地空跑：`WINGET_OUT=<临时目录> WINGET_SHA=<64 个字符> WINGET_DATE=2026-01-01 bash installer\winget-submit.sh 1.9.9`，
   带这三个变量就不会去碰网络。`sed` 填哈希那条别拿 `^` 锚——`InstallerSha256` 在 `Installers:` 条目下面是缩进的，
   锚死了静默不替换，脚本末尾加了一条 grep 兜底。
+  取哈希那两条 `gh api` 拿 1.1.3 真跑过一遍，生成结果和仓库里那份副本逐字节一致；没配 `WINGET_PAT` 时脚本只打印跳过、
+  退 0，发版照旧成功。脚本本身在 `.gitattributes` 里是 `*.sh eol=lf`，别让它带 CRLF，否则 runner 上 bash 会当场崩。
 - 现在是 `PrivilegesRequired=admin` 的全用户安装，默认目录 `C:\Program Files\BobIme`（要写系统目录，
   所以安装和升级都会弹一次 UAC）；开机自启写 HKLM 的 `Run` 项，对所有登录用户生效。
   安装时会顺手删掉早先按用户安装留下的 HKCU `Run` 项，免得登录后拉起两份进程挂两个钩子。
