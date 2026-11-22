@@ -211,6 +211,12 @@
 
 - 界面拿到的是 `Clone()` 出来的副本：「保存」才回写并落盘，「取消」或直接关窗口就丢掉；
   「恢复默认」只是把控件填成 `new AppSettings()`，还得再点一次保存。
+- 导出走 `Save(path)`，写的是 `ReadDraft()`，也就是界面上这一份，没点保存的改动一起带走；
+  导入走 `TryLoadFrom(path)`，值先 `WriteControls` 铺到控件上，仍要点「保存」才落盘。
+  读文件有两条路，别混：`Load` 是给常驻进程兜底的，坏文件静默回默认值；
+  `TryLoadFrom` 给导入用，读不到、JSON 坏了、或者压根不是这份配置都返回 false，界面才说得出「这个文件不对」。
+  认身份靠文本里出现几个只有我们才写的属性名之一（`startupMode`、`windowRules`……），
+  因为随便一份 json 都能反序列化成「全是默认值的那一份」；手改的精简文件只留几项也算过。
 - 启动输入档和启动标点档只在 `Program` 起 `ApplyStartupMode` 时读一次，改了要重启才见效；
   其余几项保存后当场接上——`ImeController.Settings` 整个换掉，下一次按键就走新键位。
 - 设置窗口开着期间 `LowLevelKeyboardHook.CaptureOwner` 填成那个对话框的句柄，钩子照挂，但只有它确实是

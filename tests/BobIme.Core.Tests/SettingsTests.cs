@@ -188,6 +188,114 @@ public class SettingsTests
     }
 
     [Fact]
+    public void ExportedFile_ImportsBackTheSameSettings()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"bobime-export-{Guid.NewGuid():N}.json");
+        var source = new AppSettings
+        {
+            StartupMode = InputMode.Pinyin,
+            ChinesePunctuation = false,
+            EnglishToggle = KeyBinding.Combo(0x41, ctrl: true, shift: true),
+            PageSize = 5,
+            PageKeys = PageKeySet.MinusEqual,
+            CandidatePlacement = CandidatePlacement.Mouse,
+            WindowRules =
+            [
+                new WindowRule("wow.exe", WindowMode.Chinese),
+                new WindowRule("game", WindowMode.English, true),
+            ],
+            WordOrders = [new WordOrder("qqqq", ["金", "狗"])],
+        };
+        try
+        {
+            source.Save(path);
+            Assert.True(AppSettings.TryLoadFrom(path, out var loaded));
+
+            Assert.Equal(source.StartupMode, loaded.StartupMode);
+            Assert.Equal(source.ChinesePunctuation, loaded.ChinesePunctuation);
+            Assert.Equal(source.EnglishToggle, loaded.EnglishToggle);
+            Assert.Equal(source.PageSize, loaded.PageSize);
+            Assert.Equal(source.PageKeys, loaded.PageKeys);
+            Assert.Equal(source.CandidatePlacement, loaded.CandidatePlacement);
+            Assert.Equal(
+                source.WindowRules.Select(rule => rule.Token),
+                loaded.WindowRules.Select(rule => rule.Token));
+            Assert.Equal(
+                source.WordOrders.Select(rule => rule.Token),
+                loaded.WordOrders.Select(rule => rule.Token));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Import_HandMinifiedFile_StillCountsAsOurConfig()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"bobime-hand-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, """
+                {"pageSize": 4, "windowRules": ["wow:chinese"]}
+                """);
+            Assert.True(AppSettings.TryLoadFrom(path, out var loaded));
+
+            Assert.Equal(4, loaded.PageSize);
+            Assert.Equal(["wow:chinese"], loaded.WindowRules.Select(rule => rule.Token));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Theory]
+    [InlineData("""{"name": "BobIme", "version": "1.1.6"}""")]
+    [InlineData("""{"startupMode": "pinyin", """)]
+    [InlineData("")]
+    public void Import_ForeignOrBrokenFile_IsRefused(string body)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"bobime-bad-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, body);
+            Assert.False(AppSettings.TryLoadFrom(path, out _));
+
+            // 常驻进程那条路照旧兜底，坏文件不能把启动挡住。
+            Assert.Equal(new AppSettings().PageSize, AppSettings.Load(path).PageSize);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Import_MissingFile_IsRefused() =>
+        Assert.False(AppSettings.TryLoadFrom(
+            Path.Combine(Path.GetTempPath(), $"bobime-none-{Guid.NewGuid():N}.json"), out _));
+
+    [Fact]
+    public void Import_OutOfRangeValues_AreClamped()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"bobime-clamp-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, """
+                {"startupMode": 3, "pageSize": 99}
+                """);
+            Assert.True(AppSettings.TryLoadFrom(path, out var loaded));
+
+            Assert.Equal(9, loaded.PageSize);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void Conflict_IsReportedForTheTwoNamesSharingAKey()
     {
         var conflict = Conflicting().FindToggleConflict();

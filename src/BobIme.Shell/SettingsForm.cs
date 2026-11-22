@@ -45,6 +45,7 @@ internal sealed class SettingsForm : Form
     private readonly CheckBox _trayDouble = new() { Text = "托盘图标双击打开符号面板", AutoSize = true };
     private readonly DataGridView _rules = RuleGrid();
     private readonly Button _ruleDelete = new() { Text = "删除一行", AutoSize = true };
+    private readonly Label _fileHint = new() { AutoSize = true, ForeColor = HintColor };
     private readonly TextBox _orderCode = new() { Width = 112 };
     private readonly ListBox _orderWords = OrderList();
     private readonly DataGridView _orderRules = OrderGrid();
@@ -245,7 +246,21 @@ internal sealed class SettingsForm : Form
         AddSection("符号面板");
         AddRow("出现位置", _placement);
         AddRow("", _trayDouble);
-        AddRow("", Note($"设置文件：{AppSettings.FilePath}"));
+
+        AddSection("配置文件");
+        var path = new Label
+        {
+            Text = AppSettings.FilePath,
+            AutoSize = true,
+            ForeColor = HintColor,
+            Margin = new Padding(0, 4, 8, 0),
+        };
+        var export = new Button { Text = "导出配置…", AutoSize = true };
+        var import = new Button { Text = "导入配置…", AutoSize = true };
+        export.Click += (_, _) => ExportToFile();
+        import.Click += (_, _) => ImportFromFile();
+        AddRow("", Flow(path, export, import));
+        AddRow("", _fileHint);
 
         var buttons = new FlowLayoutPanel
         {
@@ -709,6 +724,64 @@ internal sealed class SettingsForm : Form
         }
 
         box.SelectedIndex = -1;
+    }
+
+    /// <summary>导的是界面上这一份：没点保存的改动也一起带走，换电脑时不用先存一遍。</summary>
+    private void ExportToFile()
+    {
+        using var dialog = new SaveFileDialog
+        {
+            Title = "导出配置",
+            Filter = "Bob 五笔配置 (*.json)|*.json",
+            FileName = "bobime-settings.json",
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        try
+        {
+            ReadDraft().Save(dialog.FileName);
+            _fileHint.Text = $"已导出到 {dialog.FileName}";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(
+                this,
+                $"配置没能写入 {dialog.FileName}：{ex.Message}",
+                Text,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+    }
+
+    /// <summary>导入只把值铺到界面上，点「保存」才落到设置文件；直接取消就什么也不改。</summary>
+    private void ImportFromFile()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "导入配置",
+            Filter = "Bob 五笔配置 (*.json)|*.json",
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        if (!AppSettings.TryLoadFrom(dialog.FileName, out var loaded))
+        {
+            MessageBox.Show(
+                this,
+                $"「{Path.GetFileName(dialog.FileName)}」读不进去，或者不是 Bob 五笔的配置文件。",
+                Text,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        WriteControls(loaded);
+        _fileHint.Text = $"已导入「{Path.GetFileName(dialog.FileName)}」，点「保存」后生效。";
     }
 
     private void Save()

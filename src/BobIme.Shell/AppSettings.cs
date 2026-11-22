@@ -429,6 +429,44 @@ public sealed class AppSettings
         File.WriteAllText(path, JsonSerializer.Serialize(this, JsonOptions));
     }
 
+    /// <summary>
+    /// 导入用的读法：读不到、JSON 坏了、或者根本不是这份配置，都返回 false。
+    /// <see cref="Load"/> 是给常驻进程兜底用的，坏了静默退回默认值；导入得能说出「这份不对」，不能悄悄换成默认。
+    /// </summary>
+    public static bool TryLoadFrom(string path, out AppSettings settings)
+    {
+        settings = new AppSettings();
+        string text;
+        try
+        {
+            text = File.ReadAllText(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        // 随便一份 json 都能反序列化成「全是默认值的那一份」，先认一个只有我们才写的属性名。
+        // 手改的精简文件只会留几项，所以任意一项对上就算这份配置。
+        string[] markers = ["startupMode", "chinesePunctuation", "englishToggle", "windowRules", "wordOrders"];
+        if (!markers.Any(marker => text.Contains(marker, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        try
+        {
+            settings = JsonSerializer.Deserialize<AppSettings>(text, JsonOptions) ?? new AppSettings();
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        settings.Normalized();
+        return true;
+    }
+
     /// <summary>手改过的 JSON 里越界值夹回可用范围。</summary>
     public AppSettings Normalized()
     {
