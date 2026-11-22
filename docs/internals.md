@@ -301,7 +301,10 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
   本地空跑：`WINGET_OUT=<临时目录> WINGET_SHA=<64 个字符> WINGET_DATE=2026-01-01 bash installer\winget-submit.sh 1.9.9`，
   带这三个变量就不会去碰网络。**想单验令牌**就跑 Actions 里的「验 winget 令牌」（`.github\workflows\winget-check.yml`，
   它只多设一个 `WINGET_CHECK=1`，脚本在验完账号和 fork 写权限之后就退，建分支/PUT/开 PR/回写一步都不走）；
-  版本号填一个已经发过版的，因为填哈希要从那个 Release 附件读 digest。`sed` 填哈希那条别拿 `^` 锚——`InstallerSha256` 在 `Installers:` 条目下面是缩进的，
+  版本号填一个已经发过版的，因为填哈希要从那个 Release 附件读 digest。
+  **runner 上 `gh` 没有 token 会直接拒跑（exit 4）**，脚本开头读 digest 就撞上，所以两条工作流都必须传
+  `GITHUB_TOKEN`——这条是 2026-11-22 首跑手动检查时跑红的才发现的。检查跑通过的结论：令牌认得出 `bobvan9`、
+  `bobvan9/winget-pkgs` 的 `permissions.push` 是 `true`、runner 上生成的清单三处值与本地逐字一致。`sed` 填哈希那条别拿 `^` 锚——`InstallerSha256` 在 `Installers:` 条目下面是缩进的，
   锚死了静默不替换，脚本末尾加了一条 grep 兜底。
   取哈希那两条 `gh api` 拿 1.1.3 真跑过一遍，生成结果和仓库里那份副本逐字节一致；没配 `WINGET_PAT` 时脚本只打印跳过、
   退 0，发版照旧成功。脚本本身在 `.gitattributes` 里是 `*.sh eol=lf`，别让它带 CRLF，否则 runner 上 bash 会当场崩。
