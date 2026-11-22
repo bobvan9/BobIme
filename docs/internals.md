@@ -230,7 +230,8 @@
   `[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]`，否则 WinForms 源生成器报
   **error WFO1000**，构建直接失败。
 - 「按程序定档」是一张表格（程序名、档位下拉、整窗放行勾选）：「添加一行」插入空白行，
-  「填成一条规则」取打开设置之前那个前台程序的文件名（读不到就置灰），选中一行按 Del 删除。
+  「填成一条规则」取打开设置之前那个前台程序的文件名（读不到就置灰），删行走「删除一行」按钮
+  （跟着 `CurrentRow` 走，点按钮时焦点已经离开表格也不要紧），选中一行按 Del 是同一件事。
   勾选整窗放行后，同一行的档位格置为只读并改灰字，避免出现自相矛盾的组合。
   勾选格走 `CurrentCellDirtyStateChanged` 当场提交，值才立刻落到行上；程序化填表不触发
   `CellValueChanged`，因此 `AppendRule` 与 `WriteRules` 各自补刷一次灰度。

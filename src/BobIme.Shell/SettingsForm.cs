@@ -44,6 +44,7 @@ internal sealed class SettingsForm : Form
     private readonly ComboBox _placement = Picker();
     private readonly CheckBox _trayDouble = new() { Text = "托盘图标双击打开符号面板", AutoSize = true };
     private readonly DataGridView _rules = RuleGrid();
+    private readonly Button _ruleDelete = new() { Text = "删除一行", AutoSize = true };
     private readonly TextBox _orderCode = new() { Width = 112 };
     private readonly ListBox _orderWords = OrderList();
     private readonly DataGridView _orderRules = OrderGrid();
@@ -221,7 +222,7 @@ internal sealed class SettingsForm : Form
             "表内的程序获得焦点时先切到它那一档，离开时还回原来那档；在其中手动切过档位则以手动那次为准。"
             + "中文档只把中文模式打开，码表档仍旧用当前那一档。"
             + "勾选「整窗放行」的行不参与切档：该程序在前台时键盘钩子不介入任何按键，切换快捷键全部交还给它。"
-            + $"程序名只认文件名，最多 {WindowRule.Max} 条；选中一行按 Del 删除。"));
+            + $"程序名只认文件名，最多 {WindowRule.Max} 条；选中一行点「删除一行」，按 Del 也一样。"));
 
         AddSection("快捷键");
         AddRow("切换中英输入", KeyPanel(_englishKey));
@@ -314,7 +315,35 @@ internal sealed class SettingsForm : Form
         fill.Click += (_, _) => AppendRule(new WindowRule(exe!, WindowMode.English));
         var blank = new Button { Text = "添加一行", AutoSize = true };
         blank.Click += (_, _) => AppendRule(new WindowRule("", WindowMode.English));
-        return Flow(hint, fill, blank);
+        _ruleDelete.Click += (_, _) => RemoveCurrentRule();
+        // 空表或光标不在任何一行上时删除无从下手，按钮就别亮着。
+        _rules.CurrentCellChanged += (_, _) => SyncRuleDelete();
+        _rules.RowsRemoved += (_, _) => SyncRuleDelete();
+        SyncRuleDelete();
+        return Flow(hint, fill, blank, _ruleDelete);
+    }
+
+    private void SyncRuleDelete() => _ruleDelete.Enabled = _rules.CurrentRow is not null;
+
+    /// <summary>删掉光标所在的那一行，光标跟着落到隔壁那一行；表格空了才没有光标。</summary>
+    private void RemoveCurrentRule()
+    {
+        var index = _rules.CurrentRow?.Index ?? -1;
+        if (index < 0)
+        {
+            return;
+        }
+
+        CommitEdit();
+        _rules.Rows.RemoveAt(index);
+        if (_rules.Rows.Count > 0)
+        {
+            // RemoveAt 会把光标一起抹掉，不补回去的话剩一行也显示成「无可删除」。
+            var at = Math.Min(index, _rules.Rows.Count - 1);
+            _rules.CurrentCell = _rules.Rows[at].Cells[0];
+        }
+
+        SyncRuleDelete();
     }
 
     /// <summary>新行加在表尾并把光标停在程序名上，接着就能敲。</summary>
