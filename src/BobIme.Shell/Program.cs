@@ -40,6 +40,12 @@ internal sealed class ImeApplicationContext : ApplicationContext
     private InputMode? _held;
     private InputMode? _forced;
     private nint _forcedWindow;
+
+    /// <summary>
+    /// 当前前台窗口在规则表里被勾了「整窗放行」。钩子回调线程要读它，所以只跟着真正的前台窗口整值改写。
+    /// </summary>
+    private bool _bypass;
+
     private nint _lastUserForeground;
     private SymbolForm? _symbols;
     private SettingsForm? _settingsForm;
@@ -168,11 +174,31 @@ internal sealed class ImeApplicationContext : ApplicationContext
     {
         if (hwnd == 0 || WindowInfo.IsOwnProcess(hwnd) || WindowInfo.IsShellWindow(hwnd))
         {
+            // 档位的事不参与，但整窗放行的闸门要松开：在游戏里打开设置界面，
+            // 那格的程序名还得照常打字。
+            _bypass = false;
             return;
         }
 
         _lastUserForeground = hwnd;
-        var target = ModeOnTarget(hwnd);
+        var rule = WindowRule.Find(_settings.WindowRules, WindowInfo.ExeName(hwnd));
+
+        // 勾了整窗放行的窗口：键一个不碰，档位也不替他顶，手上那半截编码先丢掉，
+        // 免得切出去之后某个键把它顶上屏。
+        if (rule?.PassThrough ?? false)
+        {
+            if (!_bypass)
+            {
+                _controller.Reset();
+                _candidates.HideComposition();
+            }
+
+            _bypass = true;
+            return;
+        }
+
+        _bypass = false;
+        var target = ModeOnTarget(rule);
         if (target is not null)
         {
             if (ModeOnFocus.ShouldApply(CurrentMode, target, hwnd == _forcedWindow))
@@ -198,11 +224,11 @@ internal sealed class ImeApplicationContext : ApplicationContext
     }
 
     /// <summary>
-    /// 这个窗口该顶哪一档：规则表里没有就返回 <c>null</c> 不插手，
+    /// 这条规则要顶哪一档：表里没有就返回 <c>null</c> 不插手，
     /// 英文档直接切英文，中文档要「中文模式开着、码表档原样」。
     /// 一个程序在表里只有一条（<see cref="WindowRule.Normalize"/> 按文件名去重），所以不会两头对着干。
     /// </summary>
-    private InputMode? ModeOnTarget(nint hwnd) => WindowRule.Find(_settings.WindowRules, WindowInfo.ExeName(hwnd)) switch
+    private InputMode? ModeOnTarget(WindowRule? rule) => rule switch
     {
         null => null,
         { Mode: WindowMode.English } => InputMode.English,
@@ -273,6 +299,11 @@ internal sealed class ImeApplicationContext : ApplicationContext
 
     private void OnTapKey()
     {
+        if (_bypass)
+        {
+            return;
+        }
+
         var decision = _controller.ToggleChineseMode();
         Post(() => Apply(decision));
     }
@@ -291,6 +322,12 @@ internal sealed class ImeApplicationContext : ApplicationContext
 
     private bool OnKeyDown(KeyEvent key)
     {
+        // 整窗放行时回到这儿：不判快捷键、不吃键，Ctrl+Space 那一条本来要吞键，所以闸门得排在它前面。
+        if (_bypass)
+        {
+            return false;
+        }
+
         var decision = _controller.OnKeyDown(key);
         Post(() => Apply(decision));
         return decision.Consume;
@@ -380,6 +417,10 @@ internal sealed class ImeApplicationContext : ApplicationContext
         _controller.PageSize = _settings.PageSize;
         _candidates.Placement = _settings.CandidatePlacement;
         _hook.TapKey = TapKeyOf(_settings.EnglishToggle);
+        // 规则表刚改完就得对得上：刚切回来的那个程序可能正是这轮加进表里或从表里删掉的那个。
+        // 拿真正的前台窗口重算，别替已经切走的窗口扳闸门。
+        OnForegroundChanged(Native.GetForegroundWindow());
+
         SyncStatus();
     }
 

@@ -81,8 +81,8 @@ public class SettingsTests
                 CandidatePlacement = CandidatePlacement.BottomRight,
                 SymbolPanelPlacement = PanelPlacement.Caret,
                 TrayDoubleClickOpensSymbols = true,
-                WindowRules = [new("Wow.exe", WindowMode.English), new("chrome.exe", WindowMode.English),
-                    new("QQ.exe", WindowMode.Chinese)],
+                WindowRules = [new("Wow.exe", WindowMode.English, PassThrough: true),
+                    new("chrome.exe", WindowMode.English), new("QQ.exe", WindowMode.Chinese)],
             };
 
             settings.Save(path);
@@ -98,7 +98,7 @@ public class SettingsTests
             Assert.Equal(CandidatePlacement.BottomRight, loaded.CandidatePlacement);
             Assert.Equal(PanelPlacement.Caret, loaded.SymbolPanelPlacement);
             Assert.True(loaded.TrayDoubleClickOpensSymbols);
-            Assert.Equal(["Wow.exe:english", "chrome.exe:english", "QQ.exe:chinese"],
+            Assert.Equal(["Wow.exe:english+pass", "chrome.exe:english", "QQ.exe:chinese"],
                 loaded.WindowRules.Select(rule => rule.Token));
         }
         finally
@@ -151,12 +151,13 @@ public class SettingsTests
         try
         {
             File.WriteAllText(path, """
-                {"windowRules": ["wow.exe:chinese", "QQ", ":english", "notepad:french", "wow:english"]}
+                {"windowRules": ["wow.exe:chinese", "QQ", "game.exe+pass", ":english", "notepad:french", "wow:english"]}
                 """);
             var loaded = AppSettings.Load(path);
 
-            // 档位漏写按英文档，认不出档位的丢掉，同一个程序只留先出现的那条。
-            Assert.Equal(["wow.exe:chinese", "QQ:english"], loaded.WindowRules.Select(rule => rule.Token));
+            // 档位漏写按英文档，认不出档位的丢掉，同一个程序只留先出现的那条，+pass 缀在哪一头都认。
+            Assert.Equal(["wow.exe:chinese", "QQ:english", "game.exe:english+pass"],
+                loaded.WindowRules.Select(rule => rule.Token));
         }
         finally
         {
@@ -357,14 +358,32 @@ public class SettingsTests
     [InlineData("Wow.exe:chinese", "Wow.exe:chinese")]
     [InlineData("  QQ.exe:zh  ", "QQ.exe:chinese")]
     [InlineData(@"C:\Games\Wow.exe:EN", @"C:\Games\Wow.exe:english")]
+    [InlineData("wow+pass", "wow:english+pass")]
+    [InlineData("Wow.exe:chinese+pass", "Wow.exe:chinese+pass")]
+    [InlineData(" QQ :en+PASS ", "QQ:english+pass")]
     public void RuleToken_RoundTrips(string text, string expectedToken) =>
         Assert.Equal(expectedToken, WindowRule.Parse(text)!.Token);
+
+    [Theory]
+    [InlineData("wow.exe:chinese", false)]
+    [InlineData("wow.exe:chinese+pass", true)]
+    public void PassThroughFlagIsThePassSuffix(string text, bool expected) =>
+        Assert.Equal(expected, WindowRule.Parse(text)!.PassThrough);
+
+    [Theory]
+    [InlineData("Wow.exe")]
+    [InlineData(@"C:\Games\wow.EXE")]
+    public void PassThroughFlagTravelsWithTheMatchingRule(string name) =>
+        Assert.True(WindowRule.Find([new WindowRule("Wow.exe", WindowMode.English, PassThrough: true)], name)!.PassThrough);
 
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData(":english")]
     [InlineData("wow:french")]
+    [InlineData("+pass")]
+    [InlineData("   +pass")]
+    [InlineData("wow:french+pass")]
     public void MalformedRuleTextIsNotARule(string text) => Assert.Null(WindowRule.Parse(text));
 
     [Fact]
@@ -391,9 +410,11 @@ public class SettingsTests
             new WindowRule("  ", WindowMode.English), new WindowRule("Wow.exe", WindowMode.English),
             new WindowRule("wow", WindowMode.Chinese), new WindowRule("notepad.exe", WindowMode.Chinese),
             new WindowRule("NOTEPAD", WindowMode.English), new WindowRule("chrome", WindowMode.English),
+            new WindowRule("game.exe", WindowMode.English, PassThrough: true),
         ]);
 
-        Assert.Equal(["Wow.exe:english", "notepad.exe:chinese", "chrome:english"], kept.Select(rule => rule.Token));
+        Assert.Equal(["Wow.exe:english", "notepad.exe:chinese", "chrome:english", "game.exe:english+pass"],
+            kept.Select(rule => rule.Token));
     }
 
     [Fact]

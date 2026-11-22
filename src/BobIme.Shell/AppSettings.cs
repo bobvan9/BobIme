@@ -365,7 +365,9 @@ public sealed class AppSettings
     /// <summary>
     /// 「按程序定档」规则表：程序获得焦点时先切到哪一档，空表等于没这个功能。
     /// 中文档只把中文模式打开，码表档仍旧用当前那一档。
-    /// 存成 <c>"wow.exe:english"</c> 这种短记号，比对范围和条数上限见 <see cref="WindowRule.Normalize"/>。
+    /// 勾了整窗放行的那一条不切档：那个程序在前台时键盘钩子一个键都不碰，留给占用切换快捷键的游戏。
+    /// 存成 <c>"wow.exe:english"</c> 这种短记号，放行再缀一个 <c>+pass</c>；
+    /// 比对范围和条数上限见 <see cref="WindowRule.Normalize"/>。
     /// </summary>
     public List<WindowRule> WindowRules { get; set; } = [];
 

@@ -11,6 +11,9 @@ internal sealed class SettingsForm : Form
     private static readonly Color TitleColor = Color.FromArgb(0x0F, 0x6C, 0xBD);
     private static readonly Color HintColor = Color.FromArgb(0x6E, 0x76, 0x81);
 
+    /// <summary>说明文字换行封顶的宽度，窗口宽度由它管着，别被最长的那句撑开。</summary>
+    private const int NoteWrapWidth = 980;
+
     private readonly Font _bodyFont = new("Microsoft YaHei UI", 9.75f);
     private readonly Font _boldFont = new("Microsoft YaHei UI", 9.75f, FontStyle.Bold);
     private readonly bool _hasPinyin;
@@ -41,7 +44,7 @@ internal sealed class SettingsForm : Form
     private readonly DataGridView _rules = RuleGrid();
 
     /// <summary>
-    /// 规则表：一行一个程序，左边填程序名、右边选档位。
+    /// 规则表：一行一个程序，左边填程序名、中间选档位、右边勾「整窗放行」。
     /// 增行靠按钮、删行用 Del，所以不给表格自带的那条空白新行（它会把「当前行」始终占住）。
     /// </summary>
     private static DataGridView RuleGrid()
@@ -64,9 +67,18 @@ internal sealed class SettingsForm : Form
             SortMode = DataGridViewColumnSortMode.NotSortable,
             Resizable = DataGridViewTriState.False,
         };
-        return new DataGridView
+        var pass = new DataGridViewCheckBoxColumn
         {
-            Columns = { name, mode },
+            HeaderText = "整窗放行",
+            Name = "pass",
+            ToolTipText = "该程序在前台时键盘钩子不介入任何按键，切换快捷键全部交还给它",
+            Width = 88,
+            SortMode = DataGridViewColumnSortMode.NotSortable,
+            Resizable = DataGridViewTriState.False,
+        };
+        var grid = new DataGridView
+        {
+            Columns = { name, mode, pass },
             AllowUserToAddRows = false,
             AllowUserToDeleteRows = true,
             RowHeadersVisible = false,
@@ -77,9 +89,33 @@ internal sealed class SettingsForm : Form
             BackgroundColor = PanelColor,
             BorderStyle = BorderStyle.FixedSingle,
             GridColor = Color.FromArgb(0xDD, 0xDD, 0xDD),
-            Width = 300,
+            Width = 392,
             Height = 122,
         };
+        // 勾选框那格要当场提交，不然等失去焦点才落到档位那一格上，界面看着像慢半拍。
+        grid.CurrentCellDirtyStateChanged += (_, _) =>
+        {
+            if (grid.IsCurrentCellDirty)
+            {
+                grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            }
+        };
+        grid.CellValueChanged += (_, e) =>
+        {
+            if (e.RowIndex >= 0)
+            {
+                LockModeCell(grid.Rows[e.RowIndex]);
+            }
+        };
+        return grid;
+    }
+
+    /// <summary>勾了整窗放行的那一行，档位那一列不管用，就把格子灰掉，免得填出一个自相矛盾的组合。</summary>
+    private static void LockModeCell(DataGridViewRow row)
+    {
+        var pass = row.Cells[2].Value is true;
+        row.Cells[1].ReadOnly = pass;
+        row.Cells[1].Style.ForeColor = pass ? HintColor : SystemColors.WindowText;
     }
 
     /// <param name="lastForegroundExe">打开设置之前那个在前台程序的文件名，给「填成一条规则」按钮用；读不到就是 null。</param>
@@ -122,6 +158,7 @@ internal sealed class SettingsForm : Form
         AddRow("", Note(
             "表内的程序获得焦点时先切到它那一档，离开时还回原来那档；在其中手动切过档位则以手动那次为准。"
             + "中文档只把中文模式打开，码表档仍旧用当前那一档。"
+            + "勾选「整窗放行」的行不参与切档：该程序在前台时键盘钩子不介入任何按键，切换快捷键全部交还给它。"
             + $"程序名只认文件名，最多 {WindowRule.Max} 条；选中一行按 Del 删除。"));
 
         AddSection("快捷键");
@@ -216,7 +253,9 @@ internal sealed class SettingsForm : Form
     private void AppendRule(WindowRule rule)
     {
         CommitEdit();
-        var index = _rules.Rows.Add(rule.Name, rule.Mode.Display());
+        var index = _rules.Rows.Add(rule.Name, rule.Mode.Display(), rule.PassThrough);
+        // 程序化填表不会触发 CellValueChanged，勾了放行的行要自己补刷一次灰度。
+        LockModeCell(_rules.Rows[index]);
         _rules.CurrentCell = _rules.Rows[index].Cells[0];
         _rules.BeginEdit(true);
     }
@@ -240,7 +279,7 @@ internal sealed class SettingsForm : Form
             var name = row.Cells[0].Value?.ToString()?.Trim();
             if (name is { Length: > 0 })
             {
-                rules.Add(new WindowRule(name, WindowModeInfo.FromDisplay(row.Cells[1].Value?.ToString())));
+                rules.Add(new WindowRule(name, WindowModeInfo.FromDisplay(row.Cells[1].Value?.ToString()), row.Cells[2].Value is true));
             }
         }
 
@@ -253,7 +292,13 @@ internal sealed class SettingsForm : Form
         _rules.Rows.Clear();
         foreach (var rule in rules)
         {
-            _rules.Rows.Add(rule.Name, rule.Mode.Display());
+            _rules.Rows.Add(rule.Name, rule.Mode.Display(), rule.PassThrough);
+        }
+
+        // 灰不灰不能指望程序化填表时那一下 CellValueChanged，自己对着勾过的行再刷一遍。
+        foreach (DataGridViewRow row in _rules.Rows)
+        {
+            LockModeCell(row);
         }
     }
 
@@ -274,6 +319,8 @@ internal sealed class SettingsForm : Form
     {
         Text = text,
         AutoSize = true,
+        // 说明文字会越写越长，不封顶的话整张窗口跟着往宽里撑，比屏幕还宽。
+        MaximumSize = new Size(NoteWrapWidth, 0),
         ForeColor = HintColor,
         Margin = new Padding(0, 2, 0, 6),
     };

@@ -35,24 +35,42 @@ public static class WindowModeInfo
 }
 
 /// <summary>
-/// 「按程序定档」规则表的一行：程序名 + 它获得焦点时要用的档位。
+/// 「按程序定档」规则表的一行：程序名 + 它获得焦点时要用的档位，外加一个「整窗放行」开关。
 /// 程序名只认文件名，写成 <c>qq</c>、<c>QQ.exe</c> 或者整条路径都算同一个，大小写无所谓。
+/// 勾了整窗放行，档位那一列就不起作用：那个窗口里钩子一个键都不碰。
 /// </summary>
-public sealed record WindowRule(string Name, WindowMode Mode)
+public sealed record WindowRule(string Name, WindowMode Mode, bool PassThrough = false)
 {
     /// <summary>再多也没法一一核对，给设置界面留个上限。</summary>
     public const int Max = 32;
 
-    /// <summary>写进 JSON 的样子：<c>Wow.exe:english</c>，一行一条，手改也不用对着枚举值查数字。</summary>
-    public string Token => $"{Name}:{Mode.Token()}";
+    /// <summary>短记号里表示「整窗放行」的后缀，跟在档位后面。</summary>
+    private const string PassSuffix = "+pass";
 
-    /// <summary>读 <c>程序名:档位</c>；档位漏写就按英文档，程序名或档位不成形就返回 <c>null</c>。</summary>
+    /// <summary>写进 JSON 的样子：<c>Wow.exe:english</c>、<c>wow.exe:english+pass</c>，一行一条。</summary>
+    public string Token => $"{Name}:{Mode.Token()}{(PassThrough ? PassSuffix : "")}";
+
+    /// <summary>
+    /// 读 <c>程序名:档位[+pass]</c>；档位漏写就按英文档，<c>+pass</c> 也能直接缀在程序名后面。
+    /// 程序名或档位不成形就返回 <c>null</c>。
+    /// </summary>
     public static WindowRule? Parse(string? text)
     {
         var value = (text ?? "").Trim();
         if (value.Length == 0)
         {
             return null;
+        }
+
+        var pass = false;
+        if (value.EndsWith(PassSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            pass = true;
+            value = value[..^PassSuffix.Length];
+            if (value.Length == 0)
+            {
+                return null;
+            }
         }
 
         var split = value.LastIndexOf(':');
@@ -64,11 +82,11 @@ public sealed record WindowRule(string Name, WindowMode Mode)
 
         if (split < 0)
         {
-            return new WindowRule(name, WindowMode.English);
+            return new WindowRule(name, WindowMode.English, pass);
         }
 
         return WindowModeInfo.TryParseToken(value[(split + 1)..], out var mode)
-            ? new WindowRule(name, mode)
+            ? new WindowRule(name, mode, pass)
             : null;
     }
 
@@ -93,7 +111,7 @@ public sealed record WindowRule(string Name, WindowMode Mode)
                 continue;
             }
 
-            kept.Add(new WindowRule(name, rule!.Mode));
+            kept.Add(new WindowRule(name, rule!.Mode, rule.PassThrough));
         }
 
         return kept;
