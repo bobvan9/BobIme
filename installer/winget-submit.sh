@@ -4,7 +4,8 @@
 #
 # 需要的环境变量：
 #   WINGET_PAT     有 repo 权限、且账号能往自己的 winget-pkgs fork 推东西的令牌。没设就只生成、不提交上游。
-#   GITHUB_TOKEN   工作流自带的令牌，用来把清单回写本仓库；本地跑不用设。
+#   GITHUB_TOKEN   工作流自带的令牌，用来把清单回写本仓库；runner 上 gh 没有它压根不肯跑（读 digest 那步就 exit 4），
+#                  所以两条调用这个脚本的工作流都得传。本地跑不用设。
 #   WINGET_OUT     设了就把生成结果拷到这个目录然后退出（本地看 diff 用）。
 #   WINGET_CHECK   设了就在验完令牌与 fork 写权限之后退出，不建分支、不 PUT、不开 PR、不回写。
 #   WINGET_SHA     直接给定 64 位十六进制安装包哈希，跳过取 Release digest（本地试跑用）。

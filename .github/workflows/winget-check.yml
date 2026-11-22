@@ -27,4 +27,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           WINGET_PAT: ${{ secrets.WINGET_PAT }}
           WINGET_CHECK: "1"
+          # runner 里 gh 没有 token 会直接拒跑（exit 4），脚本开头读 Release digest 就得用得上；
+          # 这个自带令牌只管读自家公开附件，PAT 要到脚本末尾才接管。
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash installer/winget-submit.sh "$VERSION"
