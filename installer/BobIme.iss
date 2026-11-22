@@ -1,6 +1,6 @@
 ﻿; Bob 五笔 安装脚本：先跑 installer/build.sh 产出 artifacts\publish，再用 ISCC 编译本文件。
 #define MyAppName "Bob 五笔"
-#define MyAppVersion "1.1.6"
+#define MyAppVersion "1.1.7"
 #define MyAppPublisher "bob"
 #define MyAppExeName "BobIme.Shell.exe"
 #define PublishDir "..\artifacts\publish"
