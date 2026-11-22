@@ -6,7 +6,7 @@
 ## 目录
 
 - `src/BobIme.Core` 码表加载、前缀查询、组码状态机、词序规则（`WordOrder`）。不碰窗口也不碰键盘，可以单测。
-- `src/BobIme.Shell` 钩子、候选窗、符号面板、设置界面、配置读写（`AppSettings`）、光标定位、前台窗口事件（`FocusWatcher`）、SendInput 注入、托盘常驻（右键菜单：符号输入、标点档二选一、输入档四选一、设置、说明、关于、退出）。
+- `src/BobIme.Shell` 钩子、候选窗、符号面板、设置界面、配置读写（`AppSettings`）、光标定位、前台窗口事件（`FocusWatcher`）、SendInput 注入、检查更新（`UpdateChecker`）、托盘常驻（右键菜单：符号输入、标点档二选一、输入档四选一、设置、说明、关于、检查更新、退出）。
 - `tests/BobIme.Core.Tests` 单测。它同时引用 Core 和 Shell，两边都不走接口，所以被单测摸到的逻辑一律得是 `public`。
 - `tools/BobIme.Probe` 命令行敲码工具，调编码、看候选顺序用。
 - `tools/BobIme.Icons` 从源图生成 `assets\*.ico`，带水印裁剪和徽章包围盒测量。
@@ -354,6 +354,26 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
 - 现在是 `PrivilegesRequired=admin` 的全用户安装，默认目录 `C:\Program Files\BobIme`（要写系统目录，
   所以安装和升级都会弹一次 UAC）；开机自启写 HKLM 的 `Run` 项，对所有登录用户生效。
   安装时会顺手删掉早先按用户安装留下的 HKCU `Run` 项，免得登录后拉起两份进程挂两个钩子。
+
+## 检查更新
+
+托盘「检查更新」是整个程序唯一的一处联网：用户点一下才发一次请求，读 GitHub 上最新一版的标签，跟本机版本号比一下。
+
+- 解析和比法在 `BobIme.Core.ReleaseInfo`：`FromJson` 只取 `tag_name` 和 `html_url`，缺字段、类型不对、整份不是 JSON 对象
+  一律返回 null；`NormalizeTag` 去掉标签开头的 `v`（后面紧跟数字才算前缀，`version-2` 那种不动）；
+  `IsVersion` 要求点分段、每段纯数字；`Compare` 逐段比数值，段数不足当 0，比法是「去掉前导零 → 先比长度 → 再按字典比」，
+  不解析成整数所以几位数都不会溢出。任何一边不成形就退回整串字符串比，所以**调用方先用 `IsVersion` 挡掉认不出来的标签**，
+  别让一个看不懂的标签变成「有新版本可以装」。放 Core 是因为这一段不该真连 GitHub 也能测。
+- 网络那层在 `BobIme.Shell.UpdateChecker`：一个静态 `HttpClient`、超时 8 秒、请求头只带 `User-Agent` 和 `Accept`
+  （GitHub API 没 UA 直接拒），返回 `UpToDate` / `Newer` / `Failed` 三态，异常一律折成 `Failed` 里那句 `Detail`，
+  不把堆栈甩给用户。当前版本号取 `AssemblyInformationalVersion` 的 '+' 之前那段，跟托盘「关于」显示的是同一个来源。
+- **查到的地址只认 `https://github.com/` 前缀**：那个字符串最后要交给 `Process.Start(UseShellExecute = true)` 开浏览器，
+  不能是响应里塞进来的别的协议或别的域名；前缀不对就当读不出来。
+- 不下载、不校验、不自动装——查到新版只问一句要不要打开下载页，覆盖安装仍旧是人自己点的。这条是刻意的：
+  自动装要提权，还会把「装上就不用管」变成「装上了它自己会动」。
+- 菜单项点下去先把自己 `Enabled = false`、文字换成「正在检查…」，拿到结果再恢复，所以连点两下不会叠两个对话框；
+  `MessageBox` 在恢复之后才弹，否则阻塞那段时间菜单一路挂着「正在检查…」。自家窗口在前台时不参与
+  「按程序定档」的切档判定（`OnForegroundChanged` 里那句 `WindowInfo.IsOwnProcess`），弹出来的对话框不搅用户正在打的字。
 
 ## 为什么不走系统输入法（TSF）
 

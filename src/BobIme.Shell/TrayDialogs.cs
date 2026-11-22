@@ -47,6 +47,7 @@ internal static class TrayDialogs
         }
 
         rows.Add(new InfoRow("程序目录", AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar)));
+        rows.Add(new InfoRow("检查更新", "托盘菜单「检查更新」读 GitHub 上最新一版的标签，跟上面这个版本号比；查到新版只给一个下载页地址，不下载也不自动装。"));
 
         return [new InfoSection("版本信息", [.. rows])];
     }
@@ -57,6 +58,7 @@ internal static class TrayDialogs
         [
             new InfoRow("词库直查", "按编码直接检索词库，不做字根拆分。"),
             new InfoRow("后台常驻", "以全局键盘钩子实现，不注册为系统输入法，输入状态由托盘图标确认。"),
+            new InfoRow("联网范围", "打字用的词库、配置、候选全在本地，没有云输入、不上报。唯一的一处联网是托盘「检查更新」：点一下才发一次 HTTPS 请求，只读 GitHub 上最新一版的标签，不带任何本机信息，也不下载、不自动安装。"),
         ]),
         new("模式与开关",
         [
@@ -64,7 +66,7 @@ internal static class TrayDialogs
             new InfoRow("切换中/英", "默认单敲左 Shift，等同于在托盘菜单的「英文输入」与中文档位之间来回，圆点同步。按住 Shift 输入大写字母、Ctrl+Shift 切换键盘布局均不触发，右 Shift 无效。"),
             new InfoRow("切换标点档", "默认 Ctrl+.，只在中文输入模式下生效；切标点档不动当前编码。"),
             new InfoRow("以上三个键", "都是设置界面里的默认值，可以各自改成别的组合键或单敲，也能不绑定。"),
-            new InfoRow("托盘菜单", "自上而下：符号输入；英文标点 / 中文标点；英文输入 / 五笔输入 / 拼音输入 / 混合输入；设置、说明、关于、退出。两组档位各选其一，选中项前为实心圆点。切换输入档会清除当前编码并启用输入法；未加载拼音码表时后两项不可选。"),
+            new InfoRow("托盘菜单", "自上而下：符号输入；英文标点 / 中文标点；英文输入 / 五笔输入 / 拼音输入 / 混合输入；设置、说明、关于、检查更新、退出。两组档位各选其一，选中项前为实心圆点。切换输入档会清除当前编码并启用输入法；未加载拼音码表时后两项不可选。"),
             new InfoRow("托盘图标", "蓝底「五」为中文模式，琥珀底「A」为英文模式。停用时图标不变，仅在提示文字中标注「已停用」。"),
         ]),
         new("设置",

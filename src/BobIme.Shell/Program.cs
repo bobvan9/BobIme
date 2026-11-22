@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using BobIme.Core;
 using BobIme.Shell.Interop;
 
@@ -29,6 +30,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
     private readonly FocusWatcher _focus;
     private readonly ToolStripMenuItem[] _punctItems;
     private readonly ToolStripMenuItem[] _modeItems;
+    private readonly ToolStripMenuItem _updateItem;
     private readonly ImeController _controller;
     private AppSettings _settings;
 
@@ -90,6 +92,8 @@ internal sealed class ImeApplicationContext : ApplicationContext
         _menu.Items.Add(new ToolStripMenuItem("设置…", null, (_, _) => ShowSettings()));
         _menu.Items.Add(new ToolStripMenuItem("说明", null, (_, _) => TrayDialogs.ShowUsage()));
         _menu.Items.Add(new ToolStripMenuItem("关于", null, (_, _) => TrayDialogs.ShowAbout()));
+        _updateItem = new ToolStripMenuItem("检查更新", null, (_, _) => _ = CheckForUpdatesAsync());
+        _menu.Items.Add(_updateItem);
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(new ToolStripMenuItem("退出", null, (_, _) => ExitThread()));
 
@@ -409,6 +413,65 @@ internal sealed class ImeApplicationContext : ApplicationContext
         {
             _hook.CaptureOwner = 0;
             _settingsForm = null;
+        }
+    }
+
+    /// <summary>
+    /// 托盘「检查更新」：整个程序唯一的一处联网，只读 GitHub 上最新一版的标签。
+    /// 查的时候把菜单项按住并改成「正在检查…」，连点两下也就一次请求；
+    /// 结果拿到手先恢复再弹对话框，因为 MessageBox 是阻塞的，不然菜单一路挂着「正在检查…」。
+    /// </summary>
+    private async Task CheckForUpdatesAsync()
+    {
+        _updateItem.Enabled = false;
+        _updateItem.Text = "正在检查…";
+        UpdateChecker.Result result;
+        try
+        {
+            result = await UpdateChecker.CheckAsync();
+        }
+        finally
+        {
+            _updateItem.Enabled = true;
+            _updateItem.Text = "检查更新";
+        }
+
+        ShowUpdateResult(result);
+    }
+
+    private static void ShowUpdateResult(UpdateChecker.Result result)
+    {
+        switch (result.State)
+        {
+            case UpdateState.Failed:
+                MessageBox.Show($"没能查到最新版本：{result.Detail}\n本机这份是 {result.Current}。", "检查更新");
+                break;
+            case UpdateState.UpToDate:
+                MessageBox.Show($"已经是最新版 {result.Current}。", "检查更新");
+                break;
+            case UpdateState.Newer:
+                if (MessageBox.Show(
+                        $"有新版本：{result.Latest}（本机这份是 {result.Current}）\n要打开下载页吗？",
+                        "检查更新",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Information) == DialogResult.Yes)
+                {
+                    OpenDownloadPage(result.Url);
+                }
+
+                break;
+        }
+    }
+
+    private static void OpenDownloadPage(string url)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"没能叫浏览器打开：{ex.Message}\n下载地址：{url}", "检查更新");
         }
     }
 
