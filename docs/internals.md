@@ -299,7 +299,9 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
   别让它把整个发版判失败。**手动提交的那次分支叫 `new-bobvan9.BobIme-1.1.3`**，跟脚本的命名不同，
   所以万一要重跑 1.1.3 得留意上游会拦第二个同版本 PR。
   本地空跑：`WINGET_OUT=<临时目录> WINGET_SHA=<64 个字符> WINGET_DATE=2026-01-01 bash installer\winget-submit.sh 1.9.9`，
-  带这三个变量就不会去碰网络。`sed` 填哈希那条别拿 `^` 锚——`InstallerSha256` 在 `Installers:` 条目下面是缩进的，
+  带这三个变量就不会去碰网络。**想单验令牌**就跑 Actions 里的「验 winget 令牌」（`.github\workflows\winget-check.yml`，
+  它只多设一个 `WINGET_CHECK=1`，脚本在验完账号和 fork 写权限之后就退，建分支/PUT/开 PR/回写一步都不走）；
+  版本号填一个已经发过版的，因为填哈希要从那个 Release 附件读 digest。`sed` 填哈希那条别拿 `^` 锚——`InstallerSha256` 在 `Installers:` 条目下面是缩进的，
   锚死了静默不替换，脚本末尾加了一条 grep 兜底。
   取哈希那两条 `gh api` 拿 1.1.3 真跑过一遍，生成结果和仓库里那份副本逐字节一致；没配 `WINGET_PAT` 时脚本只打印跳过、
   退 0，发版照旧成功。脚本本身在 `.gitattributes` 里是 `*.sh eol=lf`，别让它带 CRLF，否则 runner 上 bash 会当场崩。

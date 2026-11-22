@@ -1,0 +1,30 @@
+name: 验 winget 令牌
+
+# 手动跑一次：确认 WINGET_PAT 认得出账号、对 bobvan9/winget-pkgs 有写权限，并且清单生成那段在 runner 上也对。
+# 走的是 installer/winget-submit.sh 里的 WINGET_CHECK 开关——建分支、PUT、开 PR、回写全在那之后，所以这条不出东西。
+# 版本号要填一个已经发过版的（默认 1.1.3），脚本得从那个 Release 附件读 digest 才能填哈希。
+# 输入用 env 传进脚本，别拼进 run 里，省得工作流脚本注入。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 用哪个已发布版本做检查（该 Release 的附件要带 digest）
+        required: true
+        default: "1.1.3"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 只检查，不提交
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          WINGET_PAT: ${{ secrets.WINGET_PAT }}
+          WINGET_CHECK: "1"
+        run: bash installer/winget-submit.sh "$VERSION"

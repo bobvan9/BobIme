@@ -6,6 +6,7 @@
 #   WINGET_PAT     有 repo 权限、且账号能往自己的 winget-pkgs fork 推东西的令牌。没设就只生成、不提交上游。
 #   GITHUB_TOKEN   工作流自带的令牌，用来把清单回写本仓库；本地跑不用设。
 #   WINGET_OUT     设了就把生成结果拷到这个目录然后退出（本地看 diff 用）。
+#   WINGET_CHECK   设了就在验完令牌与 fork 写权限之后退出，不建分支、不 PUT、不开 PR、不回写。
 #   WINGET_SHA     直接给定 64 位十六进制安装包哈希，跳过取 Release digest（本地试跑用）。
 #   WINGET_DATE    直接给定 ReleaseDate，同上。
 #
@@ -72,6 +73,16 @@ fi
 export GH_TOKEN="$WINGET_PAT"
 owner=$(gh api user --jq .login)
 fork="$owner/winget-pkgs"
+
+# 只验令牌：确认它认得出账号、对 fork 有写权限，然后就地收手，一个字节都不写。
+# 没把分支条件塞进 release.yml，而是单开 .github/workflows/winget-check.yml 调这个开关。
+if [ -n "${WINGET_CHECK:-}" ]; then
+  perm=$(gh api "repos/$fork" --jq .permissions.push 2>/dev/null || echo "读不到（fork 不存在或令牌看不见它）")
+  echo "令牌账号：$owner"
+  echo "上游 fork：$fork，可写：$perm"
+  echo "只检查模式，到此为止，没建分支也没开 PR。"
+  exit 0
+fi
 
 # fork 已经有了就直接用；刚建的 fork 是异步的，master ref 要等几秒才查得到。
 gh api "repos/$fork" >/dev/null 2>&1 || gh api -X POST "repos/$upstream/forks" >/dev/null
