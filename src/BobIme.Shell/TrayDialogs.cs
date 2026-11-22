@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using System.Reflection;
 
 namespace BobIme.Shell;
 
-internal sealed record InfoRow(string Key, string Text);
+/// <summary>一行「键名 + 正文」。<paramref name="Link"/> 非空时在正文后面再挂一个可点的链接。</summary>
+internal sealed record InfoRow(string Key, string Text, string? Link = null);
 
 internal sealed record InfoSection(string Title, InfoRow[] Rows);
 
@@ -11,7 +13,13 @@ internal static class TrayDialogs
 {
     public static void ShowUsage() => Show("Bob 五笔 使用说明", Usage(), new Size(640, 560));
 
-    public static void ShowAbout() => Show("关于 Bob 五笔", About(), new Size(540, 260));
+    public static void ShowAbout()
+    {
+        // 版本号后面那个链接是整个程序唯一的一处联网入口，动作全在 UpdateFlow 里。
+        using var dialog = new TextDialog("关于 Bob 五笔", About(), new Size(540, 260));
+        dialog.OnLink = label => _ = UpdateFlow.RunAsync(dialog, label);
+        dialog.ShowDialog();
+    }
 
     private static void Show(string title, InfoSection[] sections, Size clientSize)
     {
@@ -38,7 +46,7 @@ internal static class TrayDialogs
         var rows = new List<InfoRow>
         {
             new("名称", product),
-            new("版本", versionText),
+            new("版本", versionText, UpdateFlow.CheckLabel),
             new("作者", author),
         };
         if (!string.IsNullOrEmpty(copyright))
@@ -47,7 +55,6 @@ internal static class TrayDialogs
         }
 
         rows.Add(new InfoRow("程序目录", AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar)));
-        rows.Add(new InfoRow("检查更新", "托盘菜单「检查更新」读 GitHub 上最新一版的标签，跟上面这个版本号比；查到新版只给一个下载页地址，不下载也不自动装。"));
 
         return [new InfoSection("版本信息", [.. rows])];
     }
@@ -58,7 +65,7 @@ internal static class TrayDialogs
         [
             new InfoRow("词库直查", "按编码直接检索词库，不做字根拆分。"),
             new InfoRow("后台常驻", "以全局键盘钩子实现，不注册为系统输入法，输入状态由托盘图标确认。"),
-            new InfoRow("联网范围", "打字用的词库、配置、候选全在本地，没有云输入、不上报。唯一的一处联网是托盘「检查更新」：点一下才发一次 HTTPS 请求，只读 GitHub 上最新一版的标签，不带任何本机信息，也不下载、不自动安装。"),
+            new InfoRow("联网范围", "打字用的词库、配置、候选全在本地，没有云输入、不上报。唯一的一处联网是「关于」窗口里版本号后面的「检查更新」：点一下才发一次 HTTPS 请求，只读 GitHub 上最新一版的标签，不带任何本机信息，也不下载、不自动安装。"),
         ]),
         new("模式与开关",
         [
@@ -66,7 +73,7 @@ internal static class TrayDialogs
             new InfoRow("切换中/英", "默认单敲左 Shift，等同于在托盘菜单的「英文输入」与中文档位之间来回，圆点同步。按住 Shift 输入大写字母、Ctrl+Shift 切换键盘布局均不触发，右 Shift 无效。"),
             new InfoRow("切换标点档", "默认 Ctrl+.，只在中文输入模式下生效；切标点档不动当前编码。"),
             new InfoRow("以上三个键", "都是设置界面里的默认值，可以各自改成别的组合键或单敲，也能不绑定。"),
-            new InfoRow("托盘菜单", "自上而下：符号输入；英文标点 / 中文标点；英文输入 / 五笔输入 / 拼音输入 / 混合输入；设置、说明、关于、检查更新、退出。两组档位各选其一，选中项前为实心圆点。切换输入档会清除当前编码并启用输入法；未加载拼音码表时后两项不可选。"),
+            new InfoRow("托盘菜单", "自上而下：符号输入；英文标点 / 中文标点；英文输入 / 五笔输入 / 拼音输入 / 混合输入；设置、说明、关于、退出。两组档位各选其一，选中项前为实心圆点。切换输入档会清除当前编码并启用输入法；未加载拼音码表时后两项不可选。"),
             new InfoRow("托盘图标", "蓝底「五」为中文模式，琥珀底「A」为英文模式。停用时图标不变，仅在提示文字中标注「已停用」。"),
         ]),
         new("设置",
@@ -147,6 +154,10 @@ internal sealed class TextDialog : Form
     private readonly Font _bodyFont = new("Microsoft YaHei UI", 9.75f);
     private readonly Font _boldFont = new("Microsoft YaHei UI", 9.75f, FontStyle.Bold);
 
+    /// <summary>正文里那条链接被点时收到的文字，由调用方按它决定做什么。</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public Action<string>? OnLink { get; set; }
+
     public TextDialog(string title, IReadOnlyList<InfoSection> sections, Size clientSize)
     {
         Text = title;
@@ -209,6 +220,23 @@ internal sealed class TextDialog : Form
 
     private void Fill(RichTextBox box, IReadOnlyList<InfoSection> sections)
     {
+        // .NET 的 RichTextBox 没有托管的 Links / LinkColor，可点区间自己记账、自己命中测试。
+        var links = new List<(int Start, int Length, string Text)>();
+
+        int HitIndex(Point at)
+        {
+            var caret = box.GetCharIndexFromPosition(at);
+            for (var i = 0; i < links.Count; i++)
+            {
+                if (caret >= links[i].Start && caret < links[i].Start + links[i].Length)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
         foreach (var section in sections)
         {
             if (box.TextLength > 0)
@@ -233,13 +261,61 @@ internal sealed class TextDialog : Form
                 box.SelectionFont = _boldFont;
                 box.AppendText($"{row.Key}\t");
                 box.SelectionFont = _bodyFont;
-                box.AppendText($"{row.Text}{Environment.NewLine}");
+                box.AppendText(row.Text);
+                if (row.Link is { } link)
+                {
+                    // 紧跟正文一个全角空格；颜色先按选区格式刷，下划线交给 Underline。
+                    box.AppendText("　");
+                    var start = box.TextLength;
+                    box.SelectionColor = TitleColor;
+                    box.AppendText(link);
+                    box.SelectionColor = InkColor;
+                    Underline(box, start, link);
+                    links.Add((start, link.Length, link));
+                }
+
+                box.AppendText(Environment.NewLine);
             }
         }
+
+        box.MouseMove += (_, e) => box.Cursor = HitIndex(e.Location) >= 0 ? Cursors.Hand : Cursors.Default;
+        box.MouseClick += (_, e) =>
+        {
+            var index = HitIndex(e.Location);
+            if (index >= 0)
+            {
+                OnLink?.Invoke(links[index].Text);
+            }
+        };
 
         box.Select(0, 0);
         box.ScrollToCaret();
     }
+
+    /// <summary>
+    /// .NET 的 RichTextBox 没有托管的下划线口子（改字符属性的 SetCharFormat 是私有的），
+    /// 只能把这一小段挑出来用 RTF 重刷一遍。字号不写进 RTF：半磅值是绝对的，写死会把 DPI 缩放带跑，
+    /// 控件默认字号跟正文本来就是同一档。颜色得显式给，RTF 段不带上下文颜色。
+    /// </summary>
+    private static void Underline(RichTextBox box, int start, string text)
+    {
+        var body = string.Concat(text.Select(RtfChar));
+        box.Select(start, text.Length);
+        box.SelectedRtf =
+            $@"{{\rtf1\ansi\uc1{{\colortbl;\red{TitleColor.R}\green{TitleColor.G}\blue{TitleColor.B};}}\cf1\ul {body}\ul0 }}";
+
+        // 刷完光标落到末尾，后面接换行才不会盖掉刚插入的那一段。
+        box.Select(box.TextLength, 0);
+    }
+
+    private static string RtfChar(char c) => c switch
+    {
+        '\\' => @"\\",
+        '{' => @"\{",
+        '}' => @"\}",
+        < '\x80' => c.ToString(),
+        _ => $@"\u{(short)c}?",
+    };
 
     protected override void Dispose(bool disposing)
     {

@@ -6,7 +6,7 @@
 ## 目录
 
 - `src/BobIme.Core` 码表加载、前缀查询、组码状态机、词序规则（`WordOrder`）。不碰窗口也不碰键盘，可以单测。
-- `src/BobIme.Shell` 钩子、候选窗、符号面板、设置界面、配置读写（`AppSettings`）、光标定位、前台窗口事件（`FocusWatcher`）、SendInput 注入、检查更新（`UpdateChecker`）、托盘常驻（右键菜单：符号输入、标点档二选一、输入档四选一、设置、说明、关于、检查更新、退出）。
+- `src/BobIme.Shell` 钩子、候选窗、符号面板、设置界面、配置读写（`AppSettings`）、光标定位、前台窗口事件（`FocusWatcher`）、SendInput 注入、检查更新（`UpdateChecker` 查、`UpdateFlow` 是「关于」里那条链接的动作）、托盘常驻（右键菜单：符号输入、标点档二选一、输入档四选一、设置、说明、关于、退出）。
 - `tests/BobIme.Core.Tests` 单测。它同时引用 Core 和 Shell，两边都不走接口，所以被单测摸到的逻辑一律得是 `public`。
 - `tools/BobIme.Probe` 命令行敲码工具，调编码、看候选顺序用。
 - `tools/BobIme.Icons` 从源图生成 `assets\*.ico`，带水印裁剪和徽章包围盒测量。
@@ -357,7 +357,7 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
 
 ## 检查更新
 
-托盘「检查更新」是整个程序唯一的一处联网：用户点一下才发一次请求，读 GitHub 上最新一版的标签，跟本机版本号比一下。
+「关于」窗口里版本号后面的那条「检查更新」是整个程序唯一的一处联网：点一下才发一次请求，读 GitHub 上最新一版的标签，跟上面那行版本号比一下。
 
 - 解析和比法在 `BobIme.Core.ReleaseInfo`：`FromJson` 只取 `tag_name` 和 `html_url`，缺字段、类型不对、整份不是 JSON 对象
   一律返回 null；`NormalizeTag` 去掉标签开头的 `v`（后面紧跟数字才算前缀，`version-2` 那种不动）；
@@ -371,9 +371,16 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
   不能是响应里塞进来的别的协议或别的域名；前缀不对就当读不出来。
 - 不下载、不校验、不自动装——查到新版只问一句要不要打开下载页，覆盖安装仍旧是人自己点的。这条是刻意的：
   自动装要提权，还会把「装上就不用管」变成「装上了它自己会动」。
-- 菜单项点下去先把自己 `Enabled = false`、文字换成「正在检查…」，拿到结果再恢复，所以连点两下不会叠两个对话框；
-  `MessageBox` 在恢复之后才弹，否则阻塞那段时间菜单一路挂着「正在检查…」。自家窗口在前台时不参与
-  「按程序定档」的切档判定（`OnForegroundChanged` 里那句 `WindowInfo.IsOwnProcess`），弹出来的对话框不搅用户正在打的字。
+- 入口是「关于」窗口里版本号后面那条链接，动作收在 `UpdateFlow`：`TrayDialogs.ShowAbout` 把 `TextDialog.OnLink` 指到它，
+  链接文字就是分发依据（`UpdateFlow.CheckLabel`）。一个 `_running` 布尔挡重入，检查期间整张窗口 `UseWaitCursor` 挂沙漏；
+  结果拿到手先收沙漏再弹 `MessageBox`——它阻塞，压着沙漏等人点确定没道理。`MessageBox` 都拿「关于」窗口当 owner，
+  免得模态窗口把提示框压到后面。自家窗口在前台时不参与「按程序定档」的切档判定（`OnForegroundChanged` 里那句
+  `WindowInfo.IsOwnProcess`），弹出来的对话框不搅用户正在打的字。
+- 链接的画法和命中都在 `TextDialog`：.NET 的 `RichTextBox` 只有 `LinkClicked` 事件和 `DetectUrls`，托管的
+  `Links` / `LinkColor` 没有、改字符属性的 `SetCharFormat` 是私有的（2026-11-22 反射核过成员表），所以下划线只能把那一小段
+  挑出来用 `SelectedRtf` 重刷一遍——RTF 里显式给颜色，字号不写：半磅值是绝对的，写死会把 DPI 缩放带跑，控件默认字号跟正文同一档。
+  链接区间自己记在 `List<(Start, Length, Text)>`，`MouseMove` 和 `MouseClick` 都拿 `GetCharIndexFromPosition` 判同一个区间，
+  前者决定手型光标、后者决定给 `OnLink` 递哪个词。`InfoRow` 因此多了第三个参数 `Link`，目前只有「版本」那一行用得上。
 
 ## 为什么不走系统输入法（TSF）
 

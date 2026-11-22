@@ -3,7 +3,7 @@ using BobIme.Core;
 
 namespace BobIme.Shell;
 
-/// <summary>托盘「检查更新」查出来的三种结果。</summary>
+/// <summary>「关于」里那条「检查更新」查出来的三种结果。</summary>
 public enum UpdateState
 {
     UpToDate,
