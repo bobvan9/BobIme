@@ -287,6 +287,15 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
   `ProductCode` 填的是 `.iss` 里 `AppId` 那个 GUID，实测装机键就是
   `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{7A3C1E58-…}_is1`——**AppId 改了升级识别就断**，
   这条跟 `.iss` 顶上那句注释是同一件事。安装包只有 win-x64 一个产物，清单里就只挂 x64，别给 arm64 凑一条。
+- **发版时那份清单由 `installer\winget-submit.sh` 自动出**：`release.yml` 建完 Release 多一步调它，脚本拿上一版目录当模板
+  生成新版本目录（临时目录里生成，不碰工作树），填 `PackageVersion`、直链里的 `v<版本>` 与文件名、digest 转大写的
+  `InstallerSha256`、Release 的 `published_at` 当 `ReleaseDate`，然后用 GitHub API 建 fork、开分支、四份文件 PUT 上去、
+  开 PR，最后把同样四份回写本仓库 main。要的东西：一个 **`WINGET_PAT` secret**（能推自己的 `winget-pkgs` fork 并在
+  `microsoft/winget-pkgs` 开 PR，classic PAT 给 `repo` 最省事），没配就打印生成结果跳过提交，发版本身仍旧成功。
+  上游默认分支是 `master`，别写 `main`；标题按上游有没有这个包目录分「New package:」/「Update: … to …」两种。
+  本地空跑：`WINGET_OUT=<临时目录> WINGET_SHA=<64 个字符> WINGET_DATE=2026-01-01 bash installer\winget-submit.sh 1.9.9`，
+  带这三个变量就不会去碰网络。`sed` 填哈希那条别拿 `^` 锚——`InstallerSha256` 在 `Installers:` 条目下面是缩进的，
+  锚死了静默不替换，脚本末尾加了一条 grep 兜底。
 - 现在是 `PrivilegesRequired=admin` 的全用户安装，默认目录 `C:\Program Files\BobIme`（要写系统目录，
   所以安装和升级都会弹一次 UAC）；开机自启写 HKLM 的 `Run` 项，对所有登录用户生效。
   安装时会顺手删掉早先按用户安装留下的 HKCU `Run` 项，免得登录后拉起两份进程挂两个钩子。
