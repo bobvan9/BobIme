@@ -286,9 +286,13 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
   写「Windows 10」这种自由文本会被判不合格，索性不写）。
   上游流水线里 **08 Installation Validation 已于 2026-11-22 过**（他们在 VM 里真静默装了一遍），
   等于把 Silent 开关、machine 作用域和 `ProductCode` 识别一起验了，别再回头猜要不要加 `InstallerSuccessExitCodes`。
-  `ProductCode` 填的是 `.iss` 里 `AppId` 那个 GUID，实测装机键就是
-  `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{7A3C1E58-…}_is1`——**AppId 改了升级识别就断**，
-  这条跟 `.iss` 顶上那句注释是同一件事。安装包只有 win-x64 一个产物，清单里就只挂 x64，别给 arm64 凑一条。
+  `ProductCode` 填的是 `.iss` 里 `AppId` 那个 GUID，**但清单里要连大括号带 Inno 的 `_is1` 后缀整串写**
+  （`"{7A3C1E58-…}_is1"`，跟装机键 `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{7A3C1E58-…}_is1` 的名字一模一样）。
+  2026-11-22 拿本机已装的 1.1.3 用 `winget upgrade --manifest` 做了三向对照：裸 GUID 和 `{GUID}` 都报
+  「No installed package found matching input criteria」，只有 `{GUID}_is1` 回「No available upgrade found」——
+  也就是前两种写法下 winget 根本看不见这台机器装过它，`winget upgrade` 以后就不会提示升级，等于白做这条链路。
+  本地清单要先开一次 `winget settings --enable LocalManifestFiles`（管理员），否则 `--manifest` 直接被拒。
+  **AppId 改了升级识别就断**，这条跟 `.iss` 顶上那句注释是同一件事。安装包只有 win-x64 一个产物，清单里就只挂 x64，别给 arm64 凑一条。
 - **发版时那份清单由 `installer\winget-submit.sh` 自动出**：`release.yml` 建完 Release 多一步调它，脚本拿上一版目录当模板
   生成新版本目录（临时目录里生成，不碰工作树），填 `PackageVersion`、直链里的 `v<版本>` 与文件名、digest 转大写的
   `InstallerSha256`、Release 的 `published_at` 当 `ReleaseDate`，然后用 GitHub API 建 fork、开分支、四份文件 PUT 上去、
