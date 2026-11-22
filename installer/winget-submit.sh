@@ -147,7 +147,12 @@ checks in this pipeline are the authoritative ones.
 EOF
 )
 
-pr=$(gh pr create --repo "$upstream" --base master --head "$owner:$branch" --title "$title" --body "$body")
+# 同一个 tag 重跑时分支和 PR 都已经在（建 Release 那步本来就允许重跑），这时认已有那条，别把发版判成失败。
+if ! pr=$(gh pr create --repo "$upstream" --base master --head "$owner:$branch" --title "$title" --body "$body" 2>&1); then
+  pr=$(gh api "repos/$upstream/pulls?state=open&head=$owner:$branch" --jq '.[0].html_url' 2>/dev/null || true)
+  [ -n "$pr" ] || { echo "上游 PR 没开成：$pr" >&2; exit 1; }
+  echo "这个 tag 之前已经提过，沿用现有 PR。"
+fi
 echo "上游 PR：$pr"
 
 # 回写本仓库 main，让仓库里那份副本跟发出去的一致；这一步只用工作流自带的令牌，失败不影响发版。

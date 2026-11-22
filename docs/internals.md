@@ -293,6 +293,9 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
   开 PR，最后把同样四份回写本仓库 main。要的东西：一个 **`WINGET_PAT` secret**（能推自己的 `winget-pkgs` fork 并在
   `microsoft/winget-pkgs` 开 PR，classic PAT 给 `repo` 最省事），没配就打印生成结果跳过提交，发版本身仍旧成功。
   上游默认分支是 `master`，别写 `main`；标题按上游有没有这个包目录分「New package:」/「Update: … to …」两种。
+  分支名是 `submit-<包>-<版本>`，重跑同一个 tag 时 `gh pr create` 会撞已存在的 PR，脚本认那条旧的、照旧退 0，
+  别让它把整个发版判失败。**手动提交的那次分支叫 `new-bobvan9.BobIme-1.1.3`**，跟脚本的命名不同，
+  所以万一要重跑 1.1.3 得留意上游会拦第二个同版本 PR。
   本地空跑：`WINGET_OUT=<临时目录> WINGET_SHA=<64 个字符> WINGET_DATE=2026-01-01 bash installer\winget-submit.sh 1.9.9`，
   带这三个变量就不会去碰网络。`sed` 填哈希那条别拿 `^` 锚——`InstallerSha256` 在 `Installers:` 条目下面是缩进的，
   锚死了静默不替换，脚本末尾加了一条 grep 兜底。
