@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using BobIme.Core;
 
 namespace BobIme.Shell;
 
@@ -371,6 +372,13 @@ public sealed class AppSettings
     /// </summary>
     public List<WindowRule> WindowRules { get; set; } = [];
 
+    /// <summary>
+    /// 词序规则表：某个编码的候选按这里给的次序先出，没列出的照词库原本的次序排在后面。
+    /// 空表等于没这个功能，存成 <c>"qqqq:金,狗狗"</c> 这种短记号，一行一条；
+    /// 条数、词数和编码的取值范围见 <see cref="WordOrder.Normalize"/>。
+    /// </summary>
+    public List<WordOrder> WordOrders { get; set; } = [];
+
     public static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BobIme", "settings.json");
 
@@ -389,6 +397,7 @@ public sealed class AppSettings
         TrayDoubleClickOpensSymbols = TrayDoubleClickOpensSymbols,
         // 名单要是共享同一个列表，设置界面里删一条就会当场改掉正在生效的那份。
         WindowRules = [.. WindowRules],
+        WordOrders = [.. WordOrders],
     };
 
     public static AppSettings Load(string? path = null)
@@ -440,6 +449,7 @@ public sealed class AppSettings
         }
 
         WindowRules = [.. WindowRule.Normalize(WindowRules)];
+        WordOrders = [.. WordOrder.Normalize(WordOrders)];
         return this;
     }
 
@@ -473,7 +483,7 @@ public sealed class AppSettings
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        Converters = { new KeyBindingJsonConverter(), new WindowRuleJsonConverter() },
+        Converters = { new KeyBindingJsonConverter(), new WindowRuleJsonConverter(), new WordOrderJsonConverter() },
     };
 
     /// <summary>按键存成 <c>"ctrl+."</c> 这种短记号，手改文件时不用去查虚拟键码。</summary>
@@ -501,5 +511,18 @@ public sealed class AppSettings
 
         /// <summary>读不成形时给一条空名的，<see cref="WindowRule.Normalize"/> 会把空项丢掉。</summary>
         private static readonly WindowRule Empty = new("", WindowMode.English);
+    }
+
+    /// <summary>词序规则存成 <c>"qqqq:金,狗狗"</c> 一行一条，不成形的丢掉。</summary>
+    private sealed class WordOrderJsonConverter : JsonConverter<WordOrder>
+    {
+        public override WordOrder Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            reader.TokenType == JsonTokenType.String ? WordOrder.Parse(reader.GetString()) ?? Empty : Empty;
+
+        public override void Write(Utf8JsonWriter writer, WordOrder value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value.Token);
+
+        /// <summary>读不成形时给一条空码的，<see cref="WordOrder.Normalize"/> 会把空项丢掉。</summary>
+        private static readonly WordOrder Empty = new("", []);
     }
 }

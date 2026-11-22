@@ -61,6 +61,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
         {
             Settings = _settings,
             PageSize = _settings.PageSize,
+            WordOrders = _settings.WordOrders,
         };
         _candidates = new CandidateForm();
         _candidates.Placement = _settings.CandidatePlacement;
@@ -380,7 +381,8 @@ internal sealed class ImeApplicationContext : ApplicationContext
         _symbols?.Hide();
         try
         {
-            using var dialog = new SettingsForm(_settings, _hasPinyin, WindowInfo.ExeName(_lastUserForeground));
+            using var dialog = new SettingsForm(
+                _settings, _hasPinyin, WindowInfo.ExeName(_lastUserForeground), _controller.Peek);
             _settingsForm = dialog;
             _hook.CaptureOwner = dialog.Handle;
             if (dialog.ShowDialog() != DialogResult.OK)
@@ -415,6 +417,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
     {
         _controller.Settings = _settings;
         _controller.PageSize = _settings.PageSize;
+        _controller.WordOrders = _settings.WordOrders;
         _candidates.Placement = _settings.CandidatePlacement;
         _hook.TapKey = TapKeyOf(_settings.EnglishToggle);
         // 规则表刚改完就得对得上：刚切回来的那个程序可能正是这轮加进表里或从表里删掉的那个。

@@ -67,6 +67,16 @@ public sealed class ImeController
         set => _engine.ActiveSource = value;
     }
 
+    /// <summary>词序规则；设置界面保存后整个换掉，下一次查候选就走新次序。</summary>
+    public IReadOnlyList<WordOrder> WordOrders
+    {
+        get => _engine.WordOrders;
+        set => _engine.WordOrders = value;
+    }
+
+    /// <summary>按编码查一遍候选，给设置界面预览次序用，不影响正在组的码。</summary>
+    public IReadOnlyList<Candidate> Peek(string? code) => _engine.Peek(code);
+
     /// <summary>切中/英。输入法整个停用着的时候这个键不归我们管，所以不切。</summary>
     public KeyDecision ToggleChineseMode()
     {

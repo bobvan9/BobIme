@@ -5,7 +5,7 @@
 
 ## 目录
 
-- `src/BobIme.Core` 码表加载、前缀查询、组码状态机。不碰窗口也不碰键盘，可以单测。
+- `src/BobIme.Core` 码表加载、前缀查询、组码状态机、词序规则（`WordOrder`）。不碰窗口也不碰键盘，可以单测。
 - `src/BobIme.Shell` 钩子、候选窗、符号面板、设置界面、配置读写（`AppSettings`）、光标定位、前台窗口事件（`FocusWatcher`）、SendInput 注入、托盘常驻（右键菜单：符号输入、标点档二选一、输入档四选一、设置、说明、关于、退出）。
 - `tests/BobIme.Core.Tests` 单测。它同时引用 Core 和 Shell，两边都不走接口，所以被单测摸到的逻辑一律得是 `public`。
 - `tools/BobIme.Probe` 命令行敲码工具，调编码、看候选顺序用。
@@ -128,6 +128,29 @@
 - 开机时已经在前台的那个窗口不等事件，构造函数里自己补一次 `OnForegroundChanged`。
 - 表为空等于没这个功能；`FocusWatcher` 装不上也只是规则表不生效，输入法本身照常用。
 
+## 词序调整
+
+同一个码里谁先出，词库给的是默认答案：五笔按 TSV 行序（`QueryByBand` 的 `ThenBy(Index)`），拼音按第三列词频。
+想改某一码的先后不必动词库文件——设置里那张规则表按编码改写次序。
+
+- 规则模型是 `BobIme.Core.WordOrder`：`Code` + `Words`，短记号 `qqqq:金,狗狗`。
+  编码一律转小写、只认 a–z，词表去掉空项和重复项，上限 32 条、每条 30 个词，都收在 `Parse` / `Normalize` 里。
+  `CodeKey` 是给「用户填进来的编码」做同一套清洗的入口，界面和 `Peek` 都靠它，不认的输入直接当空。
+- 存进 `settings.json` 的 `wordOrders`，走 `AppSettings` 里的 `WordOrderJsonConverter`（写 `Token`、读 `Parse`），
+  和 `windowRules` 一个套路子：老配置文件缺这个键就是空表，不需要迁移；手写成 `QQQQ:狗,金` 这种也读得进来，
+  畸形条目丢掉，不会因为一行坏数据把整份设置打回默认。
+- 生效点在 `CodeTable.Query` 的最后一步：查完过一遍 `WordOrder.Apply`。它只挑**编码完全等于规则编码**的那些候选，
+  把它们原来占的那几个位置拿出来重排，位置本身不动。所以五笔的「简码先出」（按码长分带）和拼音的
+  「跨码长按词频排」都不受影响，规则里没列出的词靠 LINQ 稳定排序原样排在列出的词后面。
+  只认完整编码这一点是故意的：前缀式的规则会把 `k` 的简码席位和 `khlg` 的席位搅在一起，谁也说不清结果。
+- `ImeEngine.WordOrders` 是个整套下发给每张表的开关，`ImeController` 透传，`Program.ApplySettings` 保存后当场推一次，
+  所以改完不用重启，词库文件也不动。`ImeEngine.Peek(code)` 是给设置界面用的只读查询，不碰组码缓冲。
+- 界面那一栏只列**精确等于所填编码**的候选（前缀命中的其它码长不列），截到 30 条，跟规则能存的下限一致。
+  预览把界面上正在改的这份草稿规则套在 `Peek` 的结果上再显示，所以点「清除规则」能立刻看到词库原本的次序，
+  「取消」也不会把没保存的次序留在引擎里。词数少于 2 条视为删掉这条规则——单词的次序没有意义。
+- 规则按编码生效，两套码表里同码都受影响；它不造词，词库里没有这个词就占不到候选位。
+  要加词只能改 `data/dict` 那两份 TSV，改完重启（词库只在启动时读一次）。
+
 ## 标点档
 
 菜单上半组二选一：英文标点 / 中文标点，状态就是 `ImeController.ChinesePunctuation`。
@@ -212,6 +235,9 @@
   勾选格走 `CurrentCellDirtyStateChanged` 当场提交，值才立刻落到行上；程序化填表不触发
   `CellValueChanged`，因此 `AppendRule` 与 `WriteRules` 各自补刷一次灰度。
   换档的判定见「按程序定档」。表读回的是 `Clone()` 里另起的列表，界面里删一条不会当场改掉正在生效的那份。
+- 「词序调整」三块：规则一览（编码 + 词序两列，只读）、「编码」录入框、候选次序列表（上移 / 下移 / 清除规则）。
+  编码框改动重列候选，选一览里的一行把它的编码填进框里；候选列表编辑结果攒在 `_orders` 草稿里，
+  「保存」由 `ReadDraft` 带回 `WordOrders`，判定和生效见「词序调整」。一览与「编码 / 次序」并排放是为了少长一屏高。
 - 读文件容错到底：缺文件、坏 JSON、枚举写了不认得的值，一律回默认，`Normalized()` 再夹一遍范围。
   配置文件被手改坏了也只是回到默认档，不会启动失败。
 
@@ -363,5 +389,7 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
 - 低级钩子会跳过注入按键（`LLKHF_INJECTED`），所以端到端打字没法自己测——能测的是几何和纯逻辑。
   逻辑一律收进 `public` 的纯函数走单测；窗体要看长相就用一次性反射工程：`%TEMP%` 下建个 console 项目，
   `Assembly.LoadFrom` 载入 Debug 的 DLL，`form.DrawToBitmap` 存图。别用截屏，窗口被别的东西压着就拍到别人了，
-  `DrawToBitmap` 也不用抢前台。
+  `DrawToBitmap` 也不用抢前台。从没 `Show()` 过的窗体 `DrawToBitmap` 只画得出边框，客户区一片空白——
+  先把窗口挪到屏幕外 `Show()`、跑几轮 `Application.DoEvents()` 再画。日志写 `%TEMP%` 下的 UTF-8 文件，
+  控制台在 GBK 代码页下会把中文吐成乱码，看着像读不到。
 - `--check` 会打印码表条数、三档候选窗位置坐标、钩子安装和 SendInput 回读，是 Release 产物最便宜的验证。

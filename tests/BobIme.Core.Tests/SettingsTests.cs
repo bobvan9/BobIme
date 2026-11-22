@@ -83,6 +83,7 @@ public class SettingsTests
                 TrayDoubleClickOpensSymbols = true,
                 WindowRules = [new("Wow.exe", WindowMode.English, PassThrough: true),
                     new("chrome.exe", WindowMode.English), new("QQ.exe", WindowMode.Chinese)],
+                WordOrders = [new WordOrder("QQQQ", ["金", "狗狗"]), new WordOrder("kan", ["呓", "看"])],
             };
 
             settings.Save(path);
@@ -100,6 +101,7 @@ public class SettingsTests
             Assert.True(loaded.TrayDoubleClickOpensSymbols);
             Assert.Equal(["Wow.exe:english+pass", "chrome.exe:english", "QQ.exe:chinese"],
                 loaded.WindowRules.Select(rule => rule.Token));
+            Assert.Equal(["qqqq:金,狗狗", "kan:呓,看"], loaded.WordOrders.Select(rule => rule.Token));
         }
         finally
         {
@@ -158,6 +160,26 @@ public class SettingsTests
             // 档位漏写按英文档，认不出档位的丢掉，同一个程序只留先出现的那条，+pass 缀在哪一头都认。
             Assert.Equal(["wow.exe:chinese", "QQ:english", "game.exe:english+pass"],
                 loaded.WindowRules.Select(rule => rule.Token));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void HandEditedWordOrderTokens_AreReadAndJunkDropped()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"bobime-order-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, """
+                {"wordOrders": ["qqqq:金,狗狗", "QQQQ:狗,金", "kan: 呓 , 看 ", "ab1:甲", ":乙", "aa:", "aaaa:甲,甲,乙"]}
+                """);
+            var loaded = AppSettings.Load(path);
+
+            // 编码一律转小写，同一个编码只留先出现的那条，词去重；编码或词不成形的丢掉。
+            Assert.Equal(["qqqq:金,狗狗", "kan:呓,看", "aaaa:甲,乙"], loaded.WordOrders.Select(rule => rule.Token));
         }
         finally
         {

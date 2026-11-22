@@ -2,10 +2,10 @@ namespace BobIme.Core.Tests;
 
 internal static class TestDict
 {
-    private static readonly Lazy<CodeTable> Instance = new(() => CodeTableLoader.LoadFromFile(Resolve("jidian86.tsv")));
+    private static readonly Lazy<CodeTable> Instance = new(() => CodeTableLoader.LoadFromFile(DictPath("jidian86.tsv")));
 
     private static readonly Lazy<CodeTable> PinyinInstance = new(() =>
-        CodeTableLoader.LoadFromFile(Resolve("pinyin_base.tsv"), CodeTableFormat.Pinyin));
+        CodeTableLoader.LoadFromFile(DictPath("pinyin_base.tsv"), CodeTableFormat.Pinyin));
 
     /// <summary>仓库自带的极点 86 词库，供需要真实编码的断言使用。</summary>
     public static CodeTable Table => Instance.Value;
@@ -40,7 +40,8 @@ internal static class TestDict
         new("咱", "zan", 9, 88),
     ], CodeTableFormat.Pinyin);
 
-    private static string Resolve(string file)
+    /// <summary>词库文件的绝对路径；要往实例上挂规则的用例自己另加载一份，别共用下面这两个。</summary>
+    internal static string DictPath(string file)
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {

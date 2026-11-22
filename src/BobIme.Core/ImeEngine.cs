@@ -21,6 +21,7 @@ public sealed class ImeEngine
     private IReadOnlyList<Candidate> _candidates = [];
     private int _pageIndex;
     private int _pageSize = 9;
+    private IReadOnlyList<WordOrder> _wordOrders = [];
 
     public ImeEngine(CodeTable table) : this([table])
     {
@@ -75,6 +76,33 @@ public sealed class ImeEngine
             _pageSize = size;
             ShowPage(_matches.Count == 0 ? 0 : Math.Min(_pageIndex, Pages - 1));
         }
+    }
+
+    /// <summary>
+    /// 词序规则，整套给每一张码表。设置界面保存后换一次，下一次查候选就走新次序；
+    /// 规则按编码生效，所以五笔和拼音里同码的候选都受它影响。
+    /// </summary>
+    public IReadOnlyList<WordOrder> WordOrders
+    {
+        get => _wordOrders;
+        set
+        {
+            _wordOrders = value ?? [];
+            foreach (var table in _tables)
+            {
+                table.WordOrders = _wordOrders;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 照现在的码表和规则查一遍候选，供设置界面预览次序；
+    /// 编码不合形或超出可用码长就是空表，且不动手上的半截编码。
+    /// </summary>
+    public IReadOnlyList<Candidate> Peek(string? code)
+    {
+        var prefix = WordOrder.CodeKey(code);
+        return prefix.Length == 0 || prefix.Length > _maxLength ? [] : Query(prefix);
     }
 
     public string Buffer => _buffer;
