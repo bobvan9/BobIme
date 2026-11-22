@@ -284,6 +284,8 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
   `gh api repos/bobvan9/BobIme/releases/latest --jq '.assets[]|.digest'`。
   自检用本机 winget：`winget validate --manifest <那个目录>`（当前 schema 是 1.28.0，`Platform` 是枚举表，
   写「Windows 10」这种自由文本会被判不合格，索性不写）。
+  上游流水线里 **08 Installation Validation 已于 2026-11-22 过**（他们在 VM 里真静默装了一遍），
+  等于把 Silent 开关、machine 作用域和 `ProductCode` 识别一起验了，别再回头猜要不要加 `InstallerSuccessExitCodes`。
   `ProductCode` 填的是 `.iss` 里 `AppId` 那个 GUID，实测装机键就是
   `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{7A3C1E58-…}_is1`——**AppId 改了升级识别就断**，
   这条跟 `.iss` 顶上那句注释是同一件事。安装包只有 win-x64 一个产物，清单里就只挂 x64，别给 arm64 凑一条。
