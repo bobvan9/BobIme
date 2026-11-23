@@ -6,7 +6,7 @@
 ## 目录
 
 - `src/BobIme.Core` 码表加载、前缀查询、组码状态机、词序规则（`WordOrder`）。不碰窗口也不碰键盘，可以单测。
-- `src/BobIme.Shell` 钩子、候选窗、符号面板、设置界面、配置读写（`AppSettings`）、光标定位、前台窗口事件（`FocusWatcher`）、SendInput 注入、检查更新（`UpdateChecker` 查、`UpdateFlow` 是「关于」里那条链接的动作）、托盘常驻（右键菜单：符号输入、标点档二选一、输入档四选一、设置、说明、关于、退出）。
+- `src/BobIme.Shell` 钩子、候选窗、符号面板、设置界面、配置读写（`AppSettings`）、光标定位、前台窗口事件（`FocusWatcher`）、退出请求（`QuitWatcher`，见「退出这条路上谁在问」）、SendInput 注入、检查更新（`UpdateChecker` 查、`UpdateFlow` 是「关于」里那条链接的动作）、托盘常驻（右键菜单：符号输入、标点档二选一、输入档四选一、设置、说明、关于、退出）。
 - `tests/BobIme.Core.Tests` 单测。它同时引用 Core 和 Shell，两边都不走接口，所以被单测摸到的逻辑一律得是 `public`。
 - `tools/BobIme.Probe` 命令行敲码工具，调编码、看候选顺序用。
 - `tools/BobIme.Icons` 从源图生成 `assets\*.ico`，带水印裁剪和徽章包围盒测量。
@@ -282,6 +282,25 @@
 - 符号面板因此只用鼠标：分组标签换类、格子直接上屏、× 关闭，标题栏可以拖着走。
   它不接收键盘，键盘仍旧归正在打的那个程序，输入法钩子照常工作。
 
+## 退出这条路上谁在问
+
+- 托盘菜单「退出」是这个进程平时唯一的收摊方式，另外两路是别的程序来问：**安装/升级时的重启管理器**
+  （`CloseApplications=yes` 会请正在用着待换文件的程序退出）和**注销关机时的会话广播**。
+  这两路都只挨个问**看得见的顶层窗口**，而常驻进程一个可见窗口都没有（候选窗、符号面板平时都藏着），
+  于是没人答话：安装程序就停在「正在准备安装」那一页干等，看着像卡死。
+- 1.1.7 之前那次查不出原因的「自己退出」是同一个洞的另一半：谁来发 `WM_CLOSE`，
+  DefWindowProc 就顺手把 WinForms 的停车窗拆了，钩子回调接着往没了的句柄 `BeginInvoke`，
+  `InvalidOperationException` 冲出钩子回调把整个进程带倒（WER 记 0xc000041d / CLR20r3）。
+- 现在是 `Interop/QuitWatcher` 接这三声：`WM_CLOSE` 直接退，`WM_QUERYENDSESSION` 只回 TRUE
+  （「我没存着没落盘的东西」，真退要等 `WM_ENDSESSION`，当场退会把别人家的关机一起搅了），
+  `WM_ENDSESSION` 退。退的动作统一绕回消息循环去调 `ExitThread`，走的是和托盘「退出」同一条拆卸路，
+  钩子卸掉、托盘图标跟着进程消失——强杀会留一个点不动的幽灵图标。
+- 这扇窗口得带 `WS_VISIBLE`，尺寸 0、坐标偏到 -32000、再挂 `WS_EX_TOOLWINDOW`：
+  实测不带 `WS_VISIBLE` 的窗口根本不在 taskkill 和重启管理器的名单上（`taskkill /im` 回 0 说「已发送」，进程照旧活着）。
+  所以「看得见」只是进名册，不等于上屏。
+- `Post` 那层两种异常都得咽：`ObjectDisposedException`（Dispose 过）和 `InvalidOperationException`（只是句柄没了）。
+  少咽后一种，退出途中丢的那一次就变成一次崩溃。
+
 ## 跑
 
 ```
@@ -314,6 +333,13 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
   再用 Inno Setup 编 `installer/BobIme.iss`，产物在 `artifacts\installer\`。
   Inno 没自带简体中文语言包，`.iss` 里以英文 `Default.isl` 为底覆写了几条看得见的
   `[Messages]`，所以这个脚本**必须带 UTF-8 BOM**，否则中文按 GBK 解读就花了。
+- **`.iss` 的 `[Code]` 段是 Pascal，不是脚本小节**：注释只认 `//`、`{ }`、`(* *)`，行首分号会直接
+  报 `'BEGIN' expected`；也没有 `Exit(值)`，要 `Result := ...; Break/Exit;`。这两个坑都是 ISCC 编出来的。
+- `[Code]` 里的 `PrepareToInstall` 是升级时的兜底闸门：官方文档写明它**在 Setup 检查文件占用之前**调用，
+  所以在这里 `taskkill /im` 请常驻进程退出、轮询到它没了（`taskkill` 回 128 就是查无此进程），
+  等不到再 `/f` 强杀——重启管理器那一页根本不会停下来问，旧版残留的机器也照样能装。
+  验证这段不用真装：`taskkill /im BobIme.Shell.exe` 就是那条优雅路径，新包 0.1 秒内退干净、
+  应用程序日志里不再多崩溃事件。
 - 版本号写在两处、必须一起改：`src/BobIme.Shell/BobIme.Shell.csproj` 的 `<Version>` 和
   `installer/BobIme.iss` 的 `#define MyAppVersion`。发布产物的 `ProductVersion` 形如
   `1.1.1+<完整 git sha>`，SDK 从提交号拼出来，托盘「关于」显示的就是它，所以**先提交、再 publish**，

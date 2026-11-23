@@ -27,6 +27,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
     private readonly ContextMenuStrip _menu;
     private readonly LowLevelKeyboardHook _hook;
     private readonly FocusWatcher _focus;
+    private readonly QuitWatcher _quit;
     private readonly ToolStripMenuItem[] _punctItems;
     private readonly ToolStripMenuItem[] _modeItems;
     private readonly ImeController _controller;
@@ -110,6 +111,9 @@ internal sealed class ImeApplicationContext : ApplicationContext
                 ShowSymbols();
             }
         };
+
+        // 安装程序和注销关机都会请我们退出，得有人答这一声；不走托盘菜单那条路，退不干净。
+        _quit = new QuitWatcher(() => Post(ExitThread));
 
         // 启动档要在菜单和托盘都建好之后再挑，SyncStatus 才有东西可以点亮。
         ApplyStartupMode(_settings.StartupMode);
@@ -310,13 +314,15 @@ internal sealed class ImeApplicationContext : ApplicationContext
     }
 
     // 钩子回调里只判断，上屏和刷窗都挪回消息循环，退出途中丢一次没关系。
+    // 句柄没了有两种说法：Dispose 过的报 ObjectDisposedException，只是拆掉的报 InvalidOperationException。
+    // 哪一个都不能让它冲出钩子回调——那是一次说不清原因的崩溃，卸载还在半路上。
     private void Post(Action work)
     {
         try
         {
             _candidates.BeginInvoke(work);
         }
-        catch (ObjectDisposedException)
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
         {
         }
     }
@@ -468,6 +474,7 @@ internal sealed class ImeApplicationContext : ApplicationContext
             _menu.Dispose();
             _candidates.Dispose();
             _symbols?.Dispose();
+            _quit.Dispose();
         }
 
         base.Dispose(disposing);

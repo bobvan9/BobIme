@@ -11,6 +11,12 @@ internal static class Native
     public const int WM_SYSKEYDOWN = 0x0104;
     public const int WM_SYSKEYUP = 0x0105;
 
+    public const int WM_CLOSE = 0x0010;
+    public const int WM_QUERYENDSESSION = 0x0011;
+    public const int WM_ENDSESSION = 0x0016;
+
+    public const int WS_VISIBLE = 0x10000000;
+
     public const uint LLKHF_INJECTED = 0x10;
     public const uint LLKHF_ALTDOWN = 0x20;
     public const uint LLKHF_UP = 0x80;

@@ -84,3 +84,64 @@ Filename: "{app}\{#MyAppExeName}"; Description: "立即运行 {#MyAppName}"; Fla
 [UninstallRun]
 ; 卸载器删文件前得先把常驻进程收掉，否则 exe 被占用删不干净。
 Filename: "taskkill.exe"; Parameters: "/f /im {#MyAppExeName}"; Flags: runhidden; RunOnceId: "KillIme"
+
+[Code]
+// 兜底：常驻进程以前没有会答 WM_CLOSE 的窗口，重启管理器请它退出请不到，Setup 只能一直等在
+// 「正在准备安装」这一页，看着像是卡死。程序现在自己会答了，这段赶在 Setup 检查文件占用之前
+// 先请它退出（PrepareToInstall 就在那个时候调用），装上旧版残留的那台机器也照样管用。
+// 注释用双斜杠：[Code] 里不认分号开头的注释，那只有脚本小节才用。
+
+const
+  ShellExe = '{#MyAppExeName}';
+  // taskkill 报「找不到这个进程名」的返回码，拿它当「已经退干净了」的判据。
+  TaskkillNotFound = 128;
+
+// 请常驻进程退出：不带 /f 是让它自己收摊，带 /f 是最后手段。返回 taskkill 的退出码。
+function AskShellToQuit(Force: Boolean): Integer;
+var
+  Params: string;
+  Code: Integer;
+begin
+  Params := '/im ' + ShellExe;
+  if Force then
+    Params := '/f ' + Params;
+  if not Exec('taskkill.exe', Params, '', SW_HIDE, ewWaitUntilTerminated, Code) then
+    // taskkill 自己没跑起来，不能当成进程没了：报成「还在」，让调用方往下走强制那条路。
+    Code := 0;
+  Result := Code;
+end;
+
+function WaitForShellToQuit(Force: Boolean; Tries: Integer): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to Tries do
+  begin
+    Sleep(300);
+    if AskShellToQuit(Force) = TaskkillNotFound then
+    begin
+      Result := True;
+      Break;
+    end;
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  if AskShellToQuit(False) = TaskkillNotFound then
+    Exit; // 没在运行，多半是头一回装。
+
+  Log('{#MyAppName}: 已请正在运行的旧版退出，等它自己收摊。');
+  if WaitForShellToQuit(False, 10) then
+    Exit;
+
+  Log('{#MyAppName}: 旧版迟迟不退出，强制收掉。');
+  AskShellToQuit(True);
+  if WaitForShellToQuit(True, 10) then
+    Exit;
+
+  Result := '{#MyAppName} 正在运行，但安装程序没能把它收掉。' +
+    '请右键托盘图标选「退出」，再重新运行安装程序。';
+end;
