@@ -62,7 +62,8 @@ internal sealed class ImeApplicationContext : ApplicationContext
         {
             Settings = _settings,
             PageSize = _settings.PageSize,
-            WordOrders = _settings.WordOrders,
+            WubiWordOrders = _settings.WordOrders,
+            PinyinWordOrders = _settings.PinyinWordOrders,
         };
         _candidates = new CandidateForm();
         _candidates.Placement = _settings.CandidatePlacement;
@@ -423,7 +424,8 @@ internal sealed class ImeApplicationContext : ApplicationContext
     {
         _controller.Settings = _settings;
         _controller.PageSize = _settings.PageSize;
-        _controller.WordOrders = _settings.WordOrders;
+        _controller.WubiWordOrders = _settings.WordOrders;
+        _controller.PinyinWordOrders = _settings.PinyinWordOrders;
         _candidates.Placement = _settings.CandidatePlacement;
         _hook.TapKey = TapKeyOf(_settings.EnglishToggle);
         // 规则表刚改完就得对得上：刚切回来的那个程序可能正是这轮加进表里或从表里删掉的那个。

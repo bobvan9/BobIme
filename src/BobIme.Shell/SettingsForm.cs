@@ -13,14 +13,40 @@ internal sealed class SettingsForm : Form
     private static readonly Color TitleColor = Color.FromArgb(0x0F, 0x6C, 0xBD);
     private static readonly Color HintColor = Color.FromArgb(0x6E, 0x76, 0x81);
 
-    /// <summary>说明文字换行封顶的宽度，窗口宽度由它管着，别被最长的那句撑开。</summary>
-    private const int NoteWrapWidth = 980;
+    /// <summary>并排两块时，说明文字按一列那么宽折行。</summary>
+    private const int BlockNoteWrap = 560;
+
+    /// <summary>独占一行那几块的折行宽度，窗口宽度由它管着，别被最长的那句撑开。</summary>
+    private const int WideNoteWrap = 1160;
 
     private readonly Font _bodyFont = new("Microsoft YaHei UI", 9.75f);
     private readonly Font _boldFont = new("Microsoft YaHei UI", 9.75f, FontStyle.Bold);
     private readonly bool _hasPinyin;
-    private readonly TableLayoutPanel _grid;
+    private readonly TableLayoutPanel _outer;
+
+    /// <summary>攒着还没摆进外层的区域，<see cref="Flush"/> 把它们并排成一行。</summary>
+    private readonly List<TableLayoutPanel> _pending = [];
+
+    /// <summary>当前正在往里加行的那一块。</summary>
+    private TableLayoutPanel _grid = BlockPanel();
+
+    private int _noteWrap = BlockNoteWrap;
     private int _row;
+
+    /// <summary>一块区域自己的表：左标签、右控件两列，行高随内容。</summary>
+    private static TableLayoutPanel BlockPanel()
+    {
+        var panel = new TableLayoutPanel
+        {
+            AutoSize = true,
+            ColumnCount = 2,
+            BackColor = PanelColor,
+            Margin = new Padding(0, 0, 12, 0),
+        };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        return panel;
+    }
 
     private readonly RadioButton _modeEnglish = Mode("英文输入", InputMode.English);
     private readonly RadioButton _modeWubi = Mode("五笔输入", InputMode.Wubi);
@@ -28,6 +54,7 @@ internal sealed class SettingsForm : Form
     private readonly RadioButton _modeMixed = Mode("混合输入", InputMode.Mixed);
     private readonly RadioButton _punctChinese = new() { Text = "中文标点", AutoSize = true, Tag = true };
     private readonly RadioButton _punctEnglish = new() { Text = "英文标点", AutoSize = true, Tag = false };
+    private readonly CheckBox _commitCode = new() { Text = "切换为英文时，原中文编码直接上屏", AutoSize = true };
     private readonly KeyBox _englishKey = new();
     private readonly KeyBox _punctKey = new();
     private readonly KeyBox _enableKey = new();
@@ -45,65 +72,16 @@ internal sealed class SettingsForm : Form
     private readonly CheckBox _trayDouble = new() { Text = "托盘图标双击打开符号面板", AutoSize = true };
     private readonly DataGridView _rules = RuleGrid();
     private readonly Button _ruleDelete = new() { Text = "删除一行", AutoSize = true };
-    private readonly Label _fileHint = new() { AutoSize = true, ForeColor = HintColor };
-    private readonly TextBox _orderCode = new() { Width = 112 };
-    private readonly ListBox _orderWords = OrderList();
-    private readonly DataGridView _orderRules = OrderGrid();
-    private readonly Label _orderHint = new() { AutoSize = true, ForeColor = HintColor };
-    private readonly Func<string, IReadOnlyList<Candidate>> _candidateLookup;
-    private List<WordOrder> _orders = [];
-    private bool _orderRefreshing;
-
-    /// <summary>候选次序那一栏：一项一个词，从上往下就是上屏的先后。</summary>
-    private static ListBox OrderList() => new()
+    /// <summary>导出导入的回话带整条路径，区域宽度已经定死了，给它封顶让长路径折行而不是顶出界。</summary>
+    private readonly Label _fileHint = new()
     {
-        Width = 150,
-        Height = 96,
-        IntegralHeight = false,
-        SelectionMode = SelectionMode.One,
-        HorizontalScrollbar = true,
+        AutoSize = true,
+        MaximumSize = new Size(BlockNoteWrap, 0),
+        ForeColor = HintColor,
     };
-
-    /// <summary>
-    /// 规则一览：一行一条，左边是编码、右边是排好的词序。只读，改次序走下面那一栏，
-    /// 选中一行会把它的编码填进输入框。
-    /// </summary>
-    private static DataGridView OrderGrid()
-    {
-        var code = new DataGridViewTextBoxColumn
-        {
-            HeaderText = "编码",
-            Name = "code",
-            Width = 88,
-            ReadOnly = true,
-            SortMode = DataGridViewColumnSortMode.NotSortable,
-        };
-        var words = new DataGridViewTextBoxColumn
-        {
-            HeaderText = "词序",
-            Name = "words",
-            Width = 272,
-            ReadOnly = true,
-            ToolTipText = "该编码下候选的先后次序，没列出的词照词库原本的次序排在后面",
-            SortMode = DataGridViewColumnSortMode.NotSortable,
-        };
-        return new DataGridView
-        {
-            Columns = { code, words },
-            AllowUserToAddRows = false,
-            AllowUserToDeleteRows = false,
-            RowHeadersVisible = false,
-            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-            MultiSelect = false,
-            AutoGenerateColumns = false,
-            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
-            BackgroundColor = PanelColor,
-            BorderStyle = BorderStyle.FixedSingle,
-            GridColor = Color.FromArgb(0xDD, 0xDD, 0xDD),
-            Width = 384,
-            Height = 84,
-        };
-    }
+    private readonly WordOrderPanel _wubiOrders;
+    private readonly WordOrderPanel _pinyinOrders;
+    private readonly Func<string, CandidateSource, IReadOnlyList<Candidate>> _candidateLookup;
 
     /// <summary>
     /// 规则表：一行一个程序，左边填程序名、中间选档位、右边勾「整窗放行」。
@@ -116,7 +94,7 @@ internal sealed class SettingsForm : Form
             HeaderText = "程序名",
             Name = "name",
             ToolTipText = "只认文件名，wow、Wow.exe、整条路径都算同一个",
-            Width = 208,
+            Width = 320,
             SortMode = DataGridViewColumnSortMode.NotSortable,
         };
         var mode = new DataGridViewComboBoxColumn
@@ -151,7 +129,7 @@ internal sealed class SettingsForm : Form
             BackgroundColor = PanelColor,
             BorderStyle = BorderStyle.FixedSingle,
             GridColor = Color.FromArgb(0xDD, 0xDD, 0xDD),
-            Width = 392,
+            Width = 504,
             Height = 122,
         };
         // 勾选框那格要当场提交，不然等失去焦点才落到档位那一格上，界面看着像慢半拍。
@@ -181,8 +159,8 @@ internal sealed class SettingsForm : Form
     }
 
     /// <param name="lastForegroundExe">打开设置之前那个在前台程序的文件名，给「填成一条规则」按钮用；读不到就是 null。</param>
-    /// <param name="candidateLookup">按编码查当前候选，给「词序调整」那一栏列出次序。</param>
-    public SettingsForm(AppSettings settings, bool hasPinyin, string? lastForegroundExe, Func<string, IReadOnlyList<Candidate>> candidateLookup)
+    /// <param name="candidateLookup">按编码和来源查当前候选，给「五笔词序」「拼音词序」两块各列自己那一侧的次序。</param>
+    public SettingsForm(AppSettings settings, bool hasPinyin, string? lastForegroundExe, Func<string, CandidateSource, IReadOnlyList<Candidate>> candidateLookup)
     {
         _hasPinyin = hasPinyin;
         _candidateLookup = candidateLookup;
@@ -200,7 +178,7 @@ internal sealed class SettingsForm : Form
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
 
-        _grid = new TableLayoutPanel
+        _outer = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             AutoSize = true,
@@ -208,15 +186,16 @@ internal sealed class SettingsForm : Form
             BackColor = PanelColor,
             Padding = new Padding(12, 10, 12, 8),
         };
-        _grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        _grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _outer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _outer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
-        AddSection("启动档位");
+        BeginBlock(BlockNoteWrap, "启动档位");
         AddRow("输入档", ModePanel());
         AddRow("标点档", PunctPanel());
-        AddRow("", Note("这两项在下次启动程序时生效；当前档位随时能在托盘菜单里切。"));
+        AddRow("", _commitCode);
+        AddRow("", Note("前两档在下次启动程序时生效，当前档位随时能在托盘菜单里切；切英文上屏这条保存后当场生效。"));
 
-        AddSection("按程序定档");
+        BeginBlock(BlockNoteWrap, "按程序定档");
         AddRow("规则表", _rules);
         AddRow("", ForegroundRow(lastForegroundExe));
         AddRow("", Note(
@@ -224,30 +203,45 @@ internal sealed class SettingsForm : Form
             + "中文档只把中文模式打开，码表档仍旧用当前那一档。"
             + "勾选「整窗放行」的行不参与切档：该程序在前台时键盘钩子不介入任何按键，切换快捷键全部交还给它。"
             + $"程序名只认文件名，最多 {WindowRule.Max} 条；选中一行点「删除一行」，按 Del 也一样。"));
+        Flush();
 
-        AddSection("快捷键");
+        BeginBlock(BlockNoteWrap, "快捷键");
         AddRow("切换中英输入", KeyPanel(_englishKey));
         AddRow("切换中英标点", KeyPanel(_punctKey));
         AddRow("启用/停用输入法", KeyPanel(_enableKey));
         AddRow("", Note("在框里按下组合键即可记下；单按 Ctrl、Alt、Shift 记成「单敲」，Esc 取消。"));
 
-        AddSection("候选");
+        BeginBlock(BlockNoteWrap, "候选");
         AddRow("每页候选数", _pageSize);
         AddRow("翻页键", _pageKeys);
         AddRow("候选窗位置", _candidatePlacement);
         AddRow("", Note("跟光标时，浏览器、Electron 这类不建系统光标的程序改从无障碍接口取位置；两处都取不到才退回鼠标。"));
+        Flush();
 
-        AddSection("词序调整");
-        AddRow("规则", Flow(_orderRules, OrderEditor()));
+        BeginBlock(WideNoteWrap, "五笔词序");
+        _wubiOrders = new WordOrderPanel(CandidateSource.Wubi, _candidateLookup);
+        AddRow("规则", _wubiOrders);
         AddRow("", Note(
-            "填一个编码，下面列出它当前的候选；选中一项用上移、下移调次序，调好的次序就是该编码的一条规则。"
-            + $"规则只调整同一编码内候选的先后，简码先出与拼音词频不受影响；词库里不在这些席位上的词照原次序排在后面。最多 {WordOrder.Max} 条，每条 {WordOrder.MaxWords} 个词。"));
+            "填一个五笔编码，下面列出它当前的候选；选中一项用上移、下移调次序，调好的次序就是这条编码的规则。"
+            + "编码敲满时它名下的词整组提到最前，组内按登记的次序排；编码没敲满时只在原本占的席位里换位，简码先出不变。"
+            + $"没登记规则的编码照词库原本的次序出。最多 {WordOrder.Max} 条，每条 {WordOrder.MaxWords} 个词。"));
+        Flush();
 
-        AddSection("符号面板");
+        BeginBlock(WideNoteWrap, "拼音词序");
+        _pinyinOrders = new WordOrderPanel(CandidateSource.Pinyin, _candidateLookup) { Enabled = _hasPinyin };
+        AddRow("规则", _pinyinOrders);
+        AddRow("", Note(_hasPinyin
+            ? "拼音这一套和五笔那一套各记各的：同一个编码两边分开排，改一边不动另一边。"
+            + "填一个拼音编码，例如 gui，把想要的词上移到顶，敲满这个码时它就排第一；编码没敲满时照词频出，调过的只在原本占的席位里换位。"
+            + $"最多 {WordOrder.Max} 条，每条 {WordOrder.MaxWords} 个词。"
+            : "没有可用的拼音词库，这一套暂不可用。"));
+        Flush();
+
+        BeginBlock(BlockNoteWrap, "符号面板");
         AddRow("出现位置", _placement);
         AddRow("", _trayDouble);
 
-        AddSection("配置文件");
+        BeginBlock(BlockNoteWrap, "配置文件");
         var path = new Label
         {
             Text = AppSettings.FilePath,
@@ -261,6 +255,7 @@ internal sealed class SettingsForm : Form
         import.Click += (_, _) => ImportFromFile();
         AddRow("", Flow(path, export, import));
         AddRow("", _fileHint);
+        Flush();
 
         var buttons = new FlowLayoutPanel
         {
@@ -275,15 +270,25 @@ internal sealed class SettingsForm : Form
         restore.Click += (_, _) => WriteControls(new AppSettings());
         ok.Click += (_, _) => Save();
         buttons.Controls.AddRange([ok, cancel, restore]);
-        AddRow("", buttons);
+        AddWideRow(buttons);
 
-        Controls.Add(_grid);
+        Controls.Add(_outer);
         AcceptButton = ok;
         CancelButton = cancel;
 
         FillPageKeys();
         FillPlacements();
         WriteControls(Settings);
+
+        // 说明和区域都并排紧了之后仍旧可能比屏幕高：按内容算一次高度，装不进工作区就夹住，让最下面滚得出来。
+        var wanted = _outer.PreferredSize;
+        var cap = Screen.FromControl(this).WorkingArea.Height - 40;
+        var scroll = wanted.Height > cap;
+        AutoSize = false;
+        _outer.AutoSize = false;
+        _outer.AutoScroll = scroll;
+        var width = wanted.Width + (scroll ? SystemInformation.VerticalScrollBarWidth : 0);
+        ClientSize = new Size(width, Math.Min(wanted.Height, cap));
     }
 
     /// <summary>点保存时定稿的那份；对话框没走完就用原值。</summary>
@@ -414,189 +419,6 @@ internal sealed class SettingsForm : Form
         }
     }
 
-    /// <summary>
-    /// 规则一览右边那一竖排：填编码列出候选，用上移、下移定次序。
-    /// 和一览并排摆而不是一行一行往下堆，是因为这张窗口已经快赶上一屏高了。
-    /// </summary>
-    private Panel OrderEditor()
-    {
-        var code = Flow(ColumnName("编码"), _orderCode, _orderHint);
-        var words = Flow(ColumnName("次序"), _orderWords, OrderButtons());
-        var panel = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
-            Margin = new Padding(14, 0, 0, 0),
-        };
-        panel.Controls.AddRange([code, words]);
-        return panel;
-    }
-
-    private static Label ColumnName(string text) => new()
-    {
-        Text = text,
-        AutoSize = true,
-        Margin = new Padding(0, 4, 8, 0),
-    };
-
-    /// <summary>次序那一栏右边的三个按钮，事件在这里接上：控件都建好了，编码框才有得读。</summary>
-    private Panel OrderButtons()
-    {
-        var up = new Button { Text = "上移", AutoSize = true };
-        var down = new Button { Text = "下移", AutoSize = true };
-        var clear = new Button { Text = "清除规则", AutoSize = true };
-        up.Click += (_, _) => MoveOrder(-1);
-        down.Click += (_, _) => MoveOrder(1);
-        clear.Click += (_, _) => ClearOrderRule();
-
-        _orderCode.TextChanged += (_, _) => RefreshOrderCandidates();
-        _orderRules.SelectionChanged += (_, _) => PickOrderRule();
-
-        var panel = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
-            Margin = new Padding(6, 0, 0, 0),
-        };
-        panel.Controls.AddRange([up, down, clear]);
-        return panel;
-    }
-
-    /// <summary>选中规则一览里的某一行，把它的编码填进输入框，下面跟着换成一列候选。</summary>
-    private void PickOrderRule()
-    {
-        if (_orderRefreshing)
-        {
-            return;
-        }
-
-        if (_orderRules.CurrentRow?.Cells[0].Value?.ToString() is { Length: > 0 } code && _orderCode.Text != code)
-        {
-            _orderCode.Text = code;
-        }
-    }
-
-    /// <summary>按编码框里的编码列一遍候选：先查码表，再套上界面里正在改的这份规则。</summary>
-    private void RefreshOrderCandidates()
-    {
-        _orderRefreshing = true;
-        _orderWords.Items.Clear();
-        var code = WordOrder.CodeKey(_orderCode.Text);
-        if (code.Length > 0)
-        {
-            foreach (var candidate in WordOrder.Apply(_candidateLookup(code), _orders))
-            {
-                if (candidate.Code != code || _orderWords.Items.Count >= WordOrder.MaxWords)
-                {
-                    continue;
-                }
-
-                _orderWords.Items.Add(candidate.Text);
-            }
-
-            _orderWords.SelectedIndex = _orderWords.Items.Count > 0 ? 0 : -1;
-        }
-
-        _orderRefreshing = false;
-        ShowOrderStatus(code);
-    }
-
-    /// <summary>把选中的一项挪一格，挪完就落成这个编码的一条规则。</summary>
-    private void MoveOrder(int delta)
-    {
-        var items = _orderWords.Items;
-        var from = _orderWords.SelectedIndex;
-        var to = from + delta;
-        if (from < 0 || to < 0 || to >= items.Count)
-        {
-            return;
-        }
-
-        var moved = items[from]!;
-        items[from] = items[to]!;
-        items[to] = moved;
-        _orderWords.SelectedIndex = to;
-        CommitOrder();
-    }
-
-    /// <summary>
-    /// 当前列表的次序就是该编码的规则；只剩一个词时谈不上次序，把这条规则删掉。
-    /// 一览重铺之后码表那一份还照保存时的规则走，所以这里不碰查询，只在保存后当场接上。
-    /// </summary>
-    private void CommitOrder()
-    {
-        var code = WordOrder.CodeKey(_orderCode.Text);
-        string[] words = [.. _orderWords.Items.Cast<object>().Select(item => item?.ToString() ?? "").Where(text => text.Length > 0)];
-        var at = _orders.FindIndex(rule => rule.Code == code);
-        if (code.Length == 0)
-        {
-            return;
-        }
-
-        if (words.Length < 2)
-        {
-            if (at >= 0)
-            {
-                _orders.RemoveAt(at);
-            }
-
-            WriteOrderRules();
-            return;
-        }
-
-        if (at < 0 && _orders.Count >= WordOrder.Max)
-        {
-            _orderHint.Text = $"规则已有 {WordOrder.Max} 条，先删一条再调";
-            return;
-        }
-
-        if (at >= 0)
-        {
-            _orders[at] = new WordOrder(code, words);
-        }
-        else
-        {
-            _orders.Add(new WordOrder(code, words));
-        }
-
-        WriteOrderRules();
-    }
-
-    /// <summary>删掉这个编码的规则，列表跟着回到词库原本的次序。</summary>
-    private void ClearOrderRule()
-    {
-        var code = WordOrder.CodeKey(_orderCode.Text);
-        if (code.Length == 0)
-        {
-            return;
-        }
-
-        _orders.RemoveAll(rule => rule.Code == code);
-        RefreshOrderCandidates();
-    }
-
-    private void WriteOrderRules()
-    {
-        _orderRefreshing = true;
-        _orderRules.Rows.Clear();
-        foreach (var rule in _orders)
-        {
-            _orderRules.Rows.Add(rule.Code, string.Join(",", rule.Words));
-        }
-
-        _orderRefreshing = false;
-        ShowOrderStatus(WordOrder.CodeKey(_orderCode.Text));
-    }
-
-    private void ShowOrderStatus(string code) => _orderHint.Text = code.Length switch
-    {
-        > 0 when _orderWords.Items.Count == 0 => "词库里没有这个编码的候选",
-        0 when _orderCode.Text.Trim().Length > 0 => "编码只认小写字母",
-        _ => $"规则 {_orders.Count}/{WordOrder.Max} 条",
-    };
-
     private static Panel Flow(params Control[] controls)
     {
         var panel = new FlowLayoutPanel
@@ -610,17 +432,25 @@ internal sealed class SettingsForm : Form
         return panel;
     }
 
-    private static Label Note(string text) => new()
+    private Label Note(string text) => new()
     {
         Text = text,
         AutoSize = true,
         // 说明文字会越写越长，不封顶的话整张窗口跟着往宽里撑，比屏幕还宽。
-        MaximumSize = new Size(NoteWrapWidth, 0),
+        MaximumSize = new Size(_noteWrap, 0),
         ForeColor = HintColor,
         Margin = new Padding(0, 2, 0, 6),
     };
 
-    private void AddSection(string title) =>
+    /// <summary>
+    /// 开一块区域：标题走加粗蓝字，之后的 <see cref="AddRow"/> 都往这块里加，
+    /// 说明文字按 <paramref name="noteWrap"/> 折行。攒到 <see cref="Flush"/> 一起摆到外层。
+    /// </summary>
+    private void BeginBlock(int noteWrap, string title)
+    {
+        _noteWrap = noteWrap;
+        _grid = BlockPanel();
+        _row = 0;
         AddRow("", new Label
         {
             Text = title,
@@ -629,6 +459,39 @@ internal sealed class SettingsForm : Form
             ForeColor = TitleColor,
             Margin = new Padding(0, 10, 0, 2),
         });
+        _pending.Add(_grid);
+    }
+
+    /// <summary>把攒下的块并排摆到外层一行；只攒了一块就让它跨两列。</summary>
+    private void Flush()
+    {
+        var row = NewOuterRow();
+        for (var i = 0; i < _pending.Count; i++)
+        {
+            _outer.Controls.Add(_pending[i], i, row);
+        }
+
+        if (_pending.Count == 1)
+        {
+            _outer.SetColumnSpan(_pending[0], 2);
+        }
+
+        _pending.Clear();
+    }
+
+    /// <summary>外层独占一行、跨两列的一个控件。</summary>
+    private void AddWideRow(Control control)
+    {
+        _outer.Controls.Add(control, 0, NewOuterRow());
+        _outer.SetColumnSpan(control, 2);
+    }
+
+    private int NewOuterRow()
+    {
+        var index = _outer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _outer.RowCount = _outer.RowStyles.Count;
+        return index;
+    }
 
     /// <summary>一行两列：左边标签、右边控件；标签留空就是整行说明。</summary>
     private void AddRow(string label, Control control)
@@ -697,6 +560,7 @@ internal sealed class SettingsForm : Form
 
         _punctChinese.Checked = settings.ChinesePunctuation;
         _punctEnglish.Checked = !settings.ChinesePunctuation;
+        _commitCode.Checked = settings.EnglishToggleCommitsCode;
         _englishKey.Binding = settings.EnglishToggle;
         _punctKey.Binding = settings.PunctuationToggle;
         _enableKey.Binding = settings.EnabledToggle;
@@ -706,10 +570,8 @@ internal sealed class SettingsForm : Form
         Select(_placement, settings.SymbolPanelPlacement);
         _trayDouble.Checked = settings.TrayDoubleClickOpensSymbols;
         WriteRules(settings.WindowRules);
-        _orders = [.. settings.WordOrders];
-        _orderCode.Text = "";
-        WriteOrderRules();
-        RefreshOrderCandidates();
+        _wubiOrders.Load(settings.WordOrders);
+        _pinyinOrders.Load(settings.PinyinWordOrders);
     }
 
     private static void Select(ComboBox box, Enum value)
@@ -815,6 +677,7 @@ internal sealed class SettingsForm : Form
         draft.StartupMode = (InputMode)new[] { _modeEnglish, _modeWubi, _modePinyin, _modeMixed }
             .First(r => r.Checked).Tag!;
         draft.ChinesePunctuation = _punctChinese.Checked;
+        draft.EnglishToggleCommitsCode = _commitCode.Checked;
         draft.EnglishToggle = _englishKey.Binding;
         draft.PunctuationToggle = _punctKey.Binding;
         draft.EnabledToggle = _enableKey.Binding;
@@ -824,7 +687,8 @@ internal sealed class SettingsForm : Form
         draft.SymbolPanelPlacement = (PanelPlacement)((Option)_placement.SelectedItem!).Value;
         draft.TrayDoubleClickOpensSymbols = _trayDouble.Checked;
         draft.WindowRules = ReadRules();
-        draft.WordOrders = [.. _orders];
+        draft.WordOrders = [.. _wubiOrders.Rules];
+        draft.PinyinWordOrders = [.. _pinyinOrders.Rules];
         return draft.Normalized();
     }
 

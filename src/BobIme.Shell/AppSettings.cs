@@ -341,6 +341,12 @@ public sealed class AppSettings
     /// <summary>下次启动时标点档开在哪一头。</summary>
     public bool ChinesePunctuation { get; set; } = true;
 
+    /// <summary>
+    /// 按中英切换键切到英文时，手上还没组的编码原样上屏（打了一半的 <c>qqw</c> 就送出 <c>qqw</c>）；
+    /// 关掉等于丢掉。默认开着。
+    /// </summary>
+    public bool EnglishToggleCommitsCode { get; set; } = true;
+
     /// <summary>切中文/英文模式，默认沿用左 Shift 单敲。</summary>
     public KeyBinding EnglishToggle { get; set; } = KeyBinding.TapOf(0xA0);
 
@@ -373,11 +379,17 @@ public sealed class AppSettings
     public List<WindowRule> WindowRules { get; set; } = [];
 
     /// <summary>
-    /// 词序规则表：某个编码的候选按这里给的次序先出，没列出的照词库原本的次序排在后面。
-    /// 空表等于没这个功能，存成 <c>"qqqq:金,狗狗"</c> 这种短记号，一行一条；
+    /// 五笔那一套词序规则：某个编码的候选按这里给的次序先出，没列出的照词库原本的次序排在后面，
+    /// 只作用于五笔码表。空表等于没这个功能，存成 <c>"qqqq:金,狗狗"</c> 这种短记号，一行一条；
     /// 条数、词数和编码的取值范围见 <see cref="WordOrder.Normalize"/>。
     /// </summary>
     public List<WordOrder> WordOrders { get; set; } = [];
+
+    /// <summary>
+    /// 拼音那一套词序规则，只作用于拼音码表，和五笔那一套互不相干：
+    /// 同一个编码两边各有一条规则也各按各的，<c>"gui:贵,鬼"</c> 这种记号写在哪个键里就归哪边。
+    /// </summary>
+    public List<WordOrder> PinyinWordOrders { get; set; } = [];
 
     public static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BobIme", "settings.json");
@@ -387,6 +399,7 @@ public sealed class AppSettings
     {
         StartupMode = StartupMode,
         ChinesePunctuation = ChinesePunctuation,
+        EnglishToggleCommitsCode = EnglishToggleCommitsCode,
         EnglishToggle = EnglishToggle,
         PunctuationToggle = PunctuationToggle,
         EnabledToggle = EnabledToggle,
@@ -398,6 +411,7 @@ public sealed class AppSettings
         // 名单要是共享同一个列表，设置界面里删一条就会当场改掉正在生效的那份。
         WindowRules = [.. WindowRules],
         WordOrders = [.. WordOrders],
+        PinyinWordOrders = [.. PinyinWordOrders],
     };
 
     public static AppSettings Load(string? path = null)
@@ -488,6 +502,7 @@ public sealed class AppSettings
 
         WindowRules = [.. WindowRule.Normalize(WindowRules)];
         WordOrders = [.. WordOrder.Normalize(WordOrders)];
+        PinyinWordOrders = [.. WordOrder.Normalize(PinyinWordOrders)];
         return this;
     }
 

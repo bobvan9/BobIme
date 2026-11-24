@@ -1,8 +1,9 @@
 namespace BobIme.Core;
 
 /// <summary>
-/// 一条词序规则：某个编码下候选文字的先后次序。规则里列出的按列出的次序先出，
-/// 没列出的照码表原本的次序排在后面。写进配置的短记号是 <c>qqqq:金,狗狗</c>。
+/// 一条词序规则：某个编码下候选文字的先后次序。编码敲满时这个编码的词整组提到最前，
+/// 组内按列出的次序先出；没列出的照原次序排在后面。五笔和拼音各记一套，规则只管自己那一侧的候选。
+/// 写进配置的短记号是 <c>qqqq:金,狗狗</c>。
 /// </summary>
 public sealed record WordOrder(string Code, string[] Words)
 {
@@ -26,23 +27,41 @@ public sealed record WordOrder(string Code, string[] Words)
     }
 
     /// <summary>
-    /// 按规则重排候选：只挪动这条编码自己占的那几个位置，
-    /// 所以简码先出、拼音按词频这些原本的整体次序一概不动。
+    /// 按规则重排候选，<paramref name="code"/> 是这次查的编码，<paramref name="source"/> 是这套规则管的那一侧码表。
+    /// 编码正好敲满某条规则时，那个编码的词整组提到最前、组内按登记的次序；
+    /// 其余规则只挪动自己编码原本占的席位，所以简码先出、拼音词频这些整体次序一概不动。
+    /// 只有和 <paramref name="source"/> 同一侧的候选才可能被挪动，五笔的规则碰不到拼音的候选，反过也一样。
     /// </summary>
-    public static IReadOnlyList<Candidate> Apply(IReadOnlyList<Candidate>? candidates, IReadOnlyList<WordOrder>? rules)
+    public static IReadOnlyList<Candidate> Apply(
+        IReadOnlyList<Candidate>? candidates, IReadOnlyList<WordOrder>? rules, string? code, CandidateSource source)
     {
         if (candidates is not { Count: > 0 } hits || rules is not { Count: > 0 } orders)
         {
             return candidates ?? [];
         }
 
+        var typed = CodeKey(code);
+        var ranked = RankWithinSeats(hits, orders, typed, source);
+        var hoisted = orders.FirstOrDefault(order => order.Code == typed);
+        return hoisted is null ? ranked : MoveBlockToFront(ranked, hoisted, source);
+    }
+
+    /// <summary>置顶那条之外的规则只在自己的席位里换位：位置不动，词在这些位置上重排。</summary>
+    private static IReadOnlyList<Candidate> RankWithinSeats(
+        IReadOnlyList<Candidate> hits, IReadOnlyList<WordOrder> orders, string typed, CandidateSource source)
+    {
         var moved = hits.ToArray();
         foreach (var order in orders)
         {
+            if (order.Code == typed)
+            {
+                continue;
+            }
+
             var slots = new List<int>();
             for (var i = 0; i < moved.Length; i++)
             {
-                if (moved[i].Code == order.Code)
+                if (moved[i].Code == order.Code && moved[i].Source == source)
                 {
                     slots.Add(i);
                 }
@@ -62,6 +81,26 @@ public sealed record WordOrder(string Code, string[] Words)
         }
 
         return moved;
+    }
+
+    /// <summary>把这一侧这个编码的词整组挪到最前，其余候选照原次序接在后面。</summary>
+    private static IReadOnlyList<Candidate> MoveBlockToFront(IReadOnlyList<Candidate> hits, WordOrder order, CandidateSource source)
+    {
+        var block = new List<Candidate>();
+        var rest = new List<Candidate>(hits.Count);
+        foreach (var candidate in hits)
+        {
+            (candidate.Code == order.Code && candidate.Source == source ? block : rest).Add(candidate);
+        }
+
+        if (block.Count == 0)
+        {
+            return hits;
+        }
+
+        var ranked = block.OrderBy(candidate => order.RankOf(candidate.Text)).ToList();
+        ranked.AddRange(rest);
+        return ranked;
     }
 
     /// <summary>读 <c>编码:词1,词2</c>；编码或词不成形就返回 <c>null</c>。</summary>

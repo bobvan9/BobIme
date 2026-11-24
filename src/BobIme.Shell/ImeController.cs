@@ -67,15 +67,22 @@ public sealed class ImeController
         set => _engine.ActiveSource = value;
     }
 
-    /// <summary>词序规则；设置界面保存后整个换掉，下一次查候选就走新次序。</summary>
-    public IReadOnlyList<WordOrder> WordOrders
+    /// <summary>五笔那一套词序规则；设置界面保存后整个换掉，只作用于五笔码表。</summary>
+    public IReadOnlyList<WordOrder> WubiWordOrders
     {
-        get => _engine.WordOrders;
-        set => _engine.WordOrders = value;
+        get => _engine.WubiWordOrders;
+        set => _engine.WubiWordOrders = value;
     }
 
-    /// <summary>按编码查一遍候选，给设置界面预览次序用，不影响正在组的码。</summary>
-    public IReadOnlyList<Candidate> Peek(string? code) => _engine.Peek(code);
+    /// <summary>拼音那一套词序规则；和五笔那套互不相干。</summary>
+    public IReadOnlyList<WordOrder> PinyinWordOrders
+    {
+        get => _engine.PinyinWordOrders;
+        set => _engine.PinyinWordOrders = value;
+    }
+
+    /// <summary>按编码查一遍指定那一侧码表的候选，给设置界面预览次序用，不影响正在组的码。</summary>
+    public IReadOnlyList<Candidate> Peek(string? code, CandidateSource source) => _engine.Peek(code, source);
 
     /// <summary>切中/英。输入法整个停用着的时候这个键不归我们管，所以不切。</summary>
     public KeyDecision ToggleChineseMode()
@@ -85,8 +92,25 @@ public sealed class ImeController
             return KeyDecision.Passthrough;
         }
 
+        var text = FlushCode();
         SetChineseMode(!ChineseMode);
-        return new KeyDecision(false, null, false);
+        return new KeyDecision(false, text, false);
+    }
+
+    /// <summary>
+    /// 切到英文时把手上还没组的编码原样交出去，交给谁由调用那条决定；
+    /// 设置里关掉这条、或者手上本来就没编码，就是 <c>null</c>，跟过去一样直接丢掉。
+    /// </summary>
+    private string? FlushCode()
+    {
+        if (!Settings.EnglishToggleCommitsCode || !IsComposing)
+        {
+            return null;
+        }
+
+        var code = Buffer;
+        _engine.Clear();
+        return code;
     }
 
     /// <summary>直接指定中/英，托盘菜单选「英文输入」走这条。换模式手上的半截编码要丢掉。</summary>
@@ -140,8 +164,9 @@ public sealed class ImeController
         // 单敲形态的中英切换由钩子在抬起时判，走 ToggleChineseMode；这里只管组合键形态。
         if (settings.EnglishToggle.Matches(key.Vk, key.Ctrl, key.Alt, key.Shift))
         {
+            var text = FlushCode();
             SetChineseMode(!ChineseMode);
-            return new KeyDecision(true, null, false);
+            return new KeyDecision(true, text, false);
         }
 
         // 英文模式：一个键都不吃，全交回目标程序。

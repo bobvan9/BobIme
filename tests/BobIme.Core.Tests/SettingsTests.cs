@@ -73,6 +73,7 @@ public class SettingsTests
             {
                 StartupMode = InputMode.Pinyin,
                 ChinesePunctuation = false,
+                EnglishToggleCommitsCode = false,
                 EnglishToggle = KeyBinding.Combo(Backtick, ctrl: true),
                 PunctuationToggle = KeyBinding.None,
                 EnabledToggle = KeyBinding.Combo(F12, ctrl: true, alt: true),
@@ -84,6 +85,7 @@ public class SettingsTests
                 WindowRules = [new("Wow.exe", WindowMode.English, PassThrough: true),
                     new("chrome.exe", WindowMode.English), new("QQ.exe", WindowMode.Chinese)],
                 WordOrders = [new WordOrder("QQQQ", ["金", "狗狗"]), new WordOrder("kan", ["呓", "看"])],
+                PinyinWordOrders = [new WordOrder("gui", ["贵", "鬼"])],
             };
 
             settings.Save(path);
@@ -91,6 +93,7 @@ public class SettingsTests
 
             Assert.Equal(InputMode.Pinyin, loaded.StartupMode);
             Assert.False(loaded.ChinesePunctuation);
+            Assert.False(loaded.EnglishToggleCommitsCode);
             Assert.Equal(settings.EnglishToggle, loaded.EnglishToggle);
             Assert.True(loaded.PunctuationToggle.IsNone);
             Assert.Equal(settings.EnabledToggle, loaded.EnabledToggle);
@@ -102,6 +105,7 @@ public class SettingsTests
             Assert.Equal(["Wow.exe:english+pass", "chrome.exe:english", "QQ.exe:chinese"],
                 loaded.WindowRules.Select(rule => rule.Token));
             Assert.Equal(["qqqq:金,狗狗", "kan:呓,看"], loaded.WordOrders.Select(rule => rule.Token));
+            Assert.Equal(["gui:贵,鬼"], loaded.PinyinWordOrders.Select(rule => rule.Token));
         }
         finally
         {
@@ -188,6 +192,50 @@ public class SettingsTests
     }
 
     [Fact]
+    public void TheTwoWordOrderKeys_StayOnTheirOwnSide()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"bobime-orders-{Guid.NewGuid():N}.json");
+        try
+        {
+            // 同一个编码两边各记一条：写在哪个键里就归哪边，互不覆盖、也互不清洗。
+            File.WriteAllText(path, """
+                {"wordOrders": ["gui:工,亚"], "pinyinWordOrders": ["gui:贵,鬼", "GUI:鬼,贵"]}
+                """);
+            var loaded = AppSettings.Load(path);
+
+            Assert.Equal(["gui:工,亚"], loaded.WordOrders.Select(rule => rule.Token));
+            Assert.Equal(["gui:贵,鬼"], loaded.PinyinWordOrders.Select(rule => rule.Token));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void OldFile_WithoutThePinyinKey_LoadsNoPinyinOrders()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"bobime-orders-old-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, """
+                {"wordOrders": ["qqqq:金,狗狗"]}
+                """);
+            var loaded = AppSettings.Load(path);
+
+            // 老配置只有五笔那一套；拼音那一套缺键就是空表，等于没这个功能，不需要迁移。
+            Assert.Equal(["qqqq:金,狗狗"], loaded.WordOrders.Select(rule => rule.Token));
+            Assert.Empty(loaded.PinyinWordOrders);
+            // 切英文上屏那条也是后加的：缺键就按默认开着，老配置不用改。
+            Assert.True(loaded.EnglishToggleCommitsCode);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void ExportedFile_ImportsBackTheSameSettings()
     {
         var path = Path.Combine(Path.GetTempPath(), $"bobime-export-{Guid.NewGuid():N}.json");
@@ -195,6 +243,7 @@ public class SettingsTests
         {
             StartupMode = InputMode.Pinyin,
             ChinesePunctuation = false,
+            EnglishToggleCommitsCode = false,
             EnglishToggle = KeyBinding.Combo(0x41, ctrl: true, shift: true),
             PageSize = 5,
             PageKeys = PageKeySet.MinusEqual,
@@ -205,6 +254,7 @@ public class SettingsTests
                 new WindowRule("game", WindowMode.English, true),
             ],
             WordOrders = [new WordOrder("qqqq", ["金", "狗"])],
+            PinyinWordOrders = [new WordOrder("gui", ["贵", "鬼"])],
         };
         try
         {
@@ -213,6 +263,7 @@ public class SettingsTests
 
             Assert.Equal(source.StartupMode, loaded.StartupMode);
             Assert.Equal(source.ChinesePunctuation, loaded.ChinesePunctuation);
+            Assert.Equal(source.EnglishToggleCommitsCode, loaded.EnglishToggleCommitsCode);
             Assert.Equal(source.EnglishToggle, loaded.EnglishToggle);
             Assert.Equal(source.PageSize, loaded.PageSize);
             Assert.Equal(source.PageKeys, loaded.PageKeys);
@@ -223,6 +274,9 @@ public class SettingsTests
             Assert.Equal(
                 source.WordOrders.Select(rule => rule.Token),
                 loaded.WordOrders.Select(rule => rule.Token));
+            Assert.Equal(
+                source.PinyinWordOrders.Select(rule => rule.Token),
+                loaded.PinyinWordOrders.Select(rule => rule.Token));
         }
         finally
         {

@@ -17,11 +17,12 @@ public sealed class ImeEngine
     private int _maxLength;
     private CandidateSource? _activeSource;
     private string _buffer = "";
-    private List<Candidate> _matches = [];
+    private IReadOnlyList<Candidate> _matches = [];
     private IReadOnlyList<Candidate> _candidates = [];
     private int _pageIndex;
     private int _pageSize = 9;
-    private IReadOnlyList<WordOrder> _wordOrders = [];
+    private readonly IReadOnlyList<WordOrder>[] _ordersBySource = [[], []];
+    private readonly CodeTable[][] _bySource = [[], []];
 
     public ImeEngine(CodeTable table) : this([table])
     {
@@ -33,6 +34,8 @@ public sealed class ImeEngine
         ArgumentOutOfRangeException.ThrowIfZero(tables.Count);
         _tables = [.. tables];
         _active = _tables;
+        _bySource[(int)CandidateSource.Wubi] = [.. _tables.Where(t => t.Source == CandidateSource.Wubi)];
+        _bySource[(int)CandidateSource.Pinyin] = [.. _tables.Where(t => t.Source == CandidateSource.Pinyin)];
         _maxLength = _tables.Max(t => t.MaxCodeLength);
     }
 
@@ -79,31 +82,44 @@ public sealed class ImeEngine
     }
 
     /// <summary>
-    /// 词序规则，整套给每一张码表。设置界面保存后换一次，下一次查候选就走新次序；
-    /// 规则按编码生效，所以五笔和拼音里同码的候选都受它影响。
+    /// 五笔那一套词序规则，只下发给五笔码表。设置界面保存后换一次，下一次查候选就走新次序；
+    /// 和拼音那一套各记各的，同码也不互相影响。
     /// </summary>
-    public IReadOnlyList<WordOrder> WordOrders
+    public IReadOnlyList<WordOrder> WubiWordOrders
     {
-        get => _wordOrders;
-        set
+        get => _ordersBySource[(int)CandidateSource.Wubi];
+        set => PushOrders(CandidateSource.Wubi, value);
+    }
+
+    /// <summary>拼音那一套词序规则，只下发给拼音码表。</summary>
+    public IReadOnlyList<WordOrder> PinyinWordOrders
+    {
+        get => _ordersBySource[(int)CandidateSource.Pinyin];
+        set => PushOrders(CandidateSource.Pinyin, value);
+    }
+
+    private void PushOrders(CandidateSource source, IReadOnlyList<WordOrder>? rules)
+    {
+        var kept = rules ?? [];
+        _ordersBySource[(int)source] = kept;
+        foreach (var table in _bySource[(int)source])
         {
-            _wordOrders = value ?? [];
-            foreach (var table in _tables)
-            {
-                table.WordOrders = _wordOrders;
-            }
+            table.WordOrders = kept;
         }
     }
 
     /// <summary>
-    /// 照现在的码表和规则查一遍候选，供设置界面预览次序；
-    /// 编码不合形或超出可用码长就是空表，且不动手上的半截编码。
+    /// 照指定那一侧的码表和规则查一遍候选，供设置界面预览次序；只看 <paramref name="source"/> 那一侧，
+    /// 所以五笔那一栏列不出拼音的词，反过也一样。编码不合形或超出那一侧的码长就是空表，且不动手上的半截编码。
     /// </summary>
-    public IReadOnlyList<Candidate> Peek(string? code)
+    public IReadOnlyList<Candidate> Peek(string? code, CandidateSource source)
     {
         var prefix = WordOrder.CodeKey(code);
-        return prefix.Length == 0 || prefix.Length > _maxLength ? [] : Query(prefix);
+        var tables = _bySource[(int)source];
+        return prefix.Length == 0 || prefix.Length > MaxCodeLength(tables) ? [] : Query(prefix, tables);
     }
+
+    private static int MaxCodeLength(CodeTable[] tables) => tables.Length == 0 ? 0 : tables.Max(t => t.MaxCodeLength);
 
     public string Buffer => _buffer;
 
@@ -129,7 +145,7 @@ public sealed class ImeEngine
 
         // 码长已满还继续敲，就当作重新起组，不再往上追加。
         var next = IsBufferFull ? letter.ToString() : _buffer + letter;
-        var matches = Query(next);
+        var matches = Query(next, _active);
         if (matches.Count == 0)
         {
             return Result(KeyStatus.NoMatch);
@@ -154,7 +170,7 @@ public sealed class ImeEngine
         }
 
         _buffer = _buffer[..^1];
-        _matches = _buffer.Length == 0 ? [] : Query(_buffer);
+        _matches = _buffer.Length == 0 ? [] : Query(_buffer, _active);
         ShowPage(0);
         return Result(KeyStatus.Updated);
     }
@@ -214,7 +230,7 @@ public sealed class ImeEngine
         var from = index * PageSize;
         _candidates = from >= _matches.Count
             ? []
-            : _matches.GetRange(from, Math.Min(PageSize, _matches.Count - from));
+            : [.. _matches.Skip(from).Take(Math.Min(PageSize, _matches.Count - from))];
     }
 
     /// <summary>
@@ -222,32 +238,32 @@ public sealed class ImeEngine
     /// 半页，没用完的顺延给后面的表，翻页时各表接着上次的次序往下取。所以缓存五页也不会让
     /// 第一页被五笔的上千条同前缀词条占满、把拼音挤没。
     /// </summary>
-    private List<Candidate> Query(string prefix)
+    private IReadOnlyList<Candidate> Query(string prefix, CodeTable[] tables)
     {
-        if (_active.Length == 0)
+        if (tables.Length == 0)
         {
             return [];
         }
 
         var budget = PageSize * PageLimit;
-        var streams = new IReadOnlyList<Candidate>[_active.Length];
-        for (var t = 0; t < _active.Length; t++)
+        var streams = new IReadOnlyList<Candidate>[tables.Length];
+        for (var t = 0; t < tables.Length; t++)
         {
-            streams[t] = _active[t].Query(prefix, budget);
+            streams[t] = tables[t].Query(prefix, budget);
         }
 
-        var quota = Math.Max(1, (PageSize + _active.Length - 1) / _active.Length);
-        var cursor = new int[_active.Length];
+        var quota = Math.Max(1, (PageSize + tables.Length - 1) / tables.Length);
+        var cursor = new int[tables.Length];
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var result = new List<Candidate>(budget);
 
         while (result.Count < budget)
         {
             var before = result.Count;
-            for (var t = 0; t < _active.Length && result.Count - before < PageSize; t++)
+            for (var t = 0; t < tables.Length && result.Count - before < PageSize; t++)
             {
                 // 最后一套码表可以把这一页剩下的名额都拿走。
-                var room = t == _active.Length - 1
+                var room = t == tables.Length - 1
                     ? PageSize - (result.Count - before)
                     : Math.Min(quota, PageSize - (result.Count - before));
                 var taken = 0;
@@ -269,7 +285,17 @@ public sealed class ImeEngine
             }
         }
 
-        return result;
+        return OrderAcrossSources(result, prefix);
+    }
+
+    /// <summary>
+    /// 合流之后两套规则各自只管自己那一侧来的候选：混输时拼音置顶的词才会排到五笔那一串前面，
+    /// 五笔的规则也碰不到拼音的候选。各套码表内部早先已经按自己的规则提过一遍，这里管的是跨表先后。
+    /// </summary>
+    private IReadOnlyList<Candidate> OrderAcrossSources(IReadOnlyList<Candidate> merged, string prefix)
+    {
+        var wubiOrdered = WordOrder.Apply(merged, _ordersBySource[(int)CandidateSource.Wubi], prefix, CandidateSource.Wubi);
+        return WordOrder.Apply(wubiOrdered, _ordersBySource[(int)CandidateSource.Pinyin], prefix, CandidateSource.Pinyin);
     }
 
     private KeyResult Commit(Candidate candidate)

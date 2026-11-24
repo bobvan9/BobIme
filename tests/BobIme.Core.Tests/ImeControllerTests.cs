@@ -453,15 +453,60 @@ public class ImeControllerTests
     }
 
     [Fact]
-    public void ToggleChineseMode_DropsHalfCode()
+    public void ToggleChineseMode_CommitsTheHalfCodeByDefault()
     {
         var controller = NewController();
         controller.OnKeyDown(Letter('k'));
 
-        controller.ToggleChineseMode();
+        var decision = controller.ToggleChineseMode();
 
+        // 切英文不再吞掉手上那半截编码：原样交出去，组码状态照旧清干净。
+        Assert.Equal("k", decision.CommitText);
         Assert.False(controller.IsComposing);
         Assert.Equal("", controller.Buffer);
+        Assert.False(controller.ChineseMode);
+    }
+
+    [Fact]
+    public void ToggleChineseMode_WithoutTheSettingDropsTheHalfCode()
+    {
+        var controller = NewController();
+        controller.Settings = new AppSettings { EnglishToggleCommitsCode = false };
+        controller.OnKeyDown(Letter('k'));
+
+        Assert.Null(controller.ToggleChineseMode().CommitText);
+        Assert.False(controller.IsComposing);
+    }
+
+    [Fact]
+    public void EnglishToggleCombo_CommitsTheHalfCodeAndStillEatsTheKey()
+    {
+        var controller = NewController();
+        controller.Settings = new AppSettings
+        {
+            EnglishToggle = KeyBinding.Combo(VirtualKey.Space, ctrl: true),
+            EnabledToggle = KeyBinding.Combo(F1, ctrl: true),
+        };
+        controller.OnKeyDown(Letter('k'));
+
+        var decision = controller.OnKeyDown(Key(VirtualKey.Space, ctrl: true));
+
+        Assert.True(decision.Consume);
+        Assert.Equal("k", decision.CommitText);
+        Assert.False(controller.ChineseMode);
+    }
+
+    [Fact]
+    public void EnglishToggleCombo_WhileIdleCommitsNothing()
+    {
+        var controller = NewController();
+        controller.Settings = new AppSettings
+        {
+            EnglishToggle = KeyBinding.Combo(VirtualKey.Space, ctrl: true),
+            EnabledToggle = KeyBinding.Combo(F1, ctrl: true),
+        };
+
+        Assert.Null(controller.OnKeyDown(Key(VirtualKey.Space, ctrl: true)).CommitText);
     }
 
     [Fact]

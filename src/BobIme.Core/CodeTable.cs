@@ -75,7 +75,7 @@ public sealed class CodeTable
 
     public int Count { get; }
 
-    /// <summary>词序规则，套在查询结果上；空规则时查询结果原样返回。</summary>
+    /// <summary>本表这一侧的词序规则；空表时查询结果原样返回。</summary>
     public IReadOnlyList<WordOrder> WordOrders { get; set; } = [];
 
     /// <summary>返回所有以 <paramref name="prefix"/> 开头的词条；同词条只出现一次。</summary>
@@ -87,7 +87,8 @@ public sealed class CodeTable
             return [];
         }
 
-        return WordOrder.Apply(Format.RankByWeight ? QueryByWeight(prefix, limit) : QueryByBand(prefix, limit), WordOrders);
+        return WordOrder.Apply(
+            Format.RankByWeight ? QueryByWeight(prefix, limit) : QueryByBand(prefix, limit), WordOrders, prefix, Source);
     }
 
     /// <summary>分带查：先本码长，再逐级放长，靠二分定位起点。</summary>
