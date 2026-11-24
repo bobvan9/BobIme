@@ -1,8 +1,8 @@
 name: 出安装包并发版
 
-# 推一个 v* 的 tag 就跑这一条：核对版本号 -> 测试 -> 自包含发布 -> Inno Setup 编包 -> 建 Release 挂附件 -> winget 清单出 PR。
+# 推一个 v* 的 tag 就跑这一条：核对版本号 -> 测试 -> 自包含发布 -> Inno Setup 编包 -> 建 Release 挂附件。
 # 本机出包仍旧用 bash installer/build.sh，这里只是把同一串步骤搬到 tag 上，省得换机器忘了同步版本。
-# 版本号写在两处（csproj 和 .iss），清单里那三处由 installer/winget-submit.sh 从 Release 附件自己填。
+# 版本号只写在两处（csproj 和 .iss），tag 必须和它们一致，否则第一步就拒。
 on:
   push:
     tags:
@@ -74,13 +74,3 @@ jobs:
             printf '%s\n' "$notes" > release-notes.md
             gh release create "$GITHUB_REF_NAME" --title "Bob 五笔 $VERSION" --notes-file release-notes.md "$file"
           fi
-
-      # 清单跟着版本走：脚本生成 1.28 清单四件套、向 microsoft/winget-pkgs 开 PR，再把清单回写本仓库 main。
-      # 没配 WINGET_PAT 这个 secret 就只打印生成结果并跳过提交，发版本身照旧成功。
-      # CLA 由机器人记录在个人账号上，已经同意过就不会再拦；真被拦了去 PR 里回一句 agree 即可。
-      - name: winget 清单出 PR
-        shell: bash
-        env:
-          WINGET_PAT: ${{ secrets.WINGET_PAT }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash installer/winget-submit.sh "$VERSION"

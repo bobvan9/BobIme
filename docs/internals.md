@@ -369,41 +369,12 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
 - `.github/workflows/ci.yml` 只管推 main 和 PR 时跑一遍 `dotnet test`，不出包也不发版，
   README 顶上那枚构建徽章指的就是它；发版徽章走 `v*` 标签那条。两条别合一条，
   合了以后每次推 main 都会去核对版本号、装 Inno，白等三十秒还可能误建 Release。
-- **winget 清单在 `installer\winget\manifests\b\bobvan9\BobIme\<版本>\`**，四个文件（version/installer/
-  defaultLocale/locale），目录层级照上游 `manifests/<小写首字母>/<Publisher>/<App>/<Version>/`，整份版本目录
-  拷进 fork 就能提 PR。跟着版本走的是三处：`PackageVersion`、`InstallerUrl` 里的 `v<版本>` 和文件名、
-  `InstallerSha256`；哈希别自己算，取 Release 附件的 digest：
-  `gh api repos/bobvan9/BobIme/releases/latest --jq '.assets[]|.digest'`。
-  自检用本机 winget：`winget validate --manifest <那个目录>`（当前 schema 是 1.28.0，`Platform` 是枚举表，
-  写「Windows 10」这种自由文本会被判不合格，索性不写）。
-  上游流水线里 **08 Installation Validation 已于 2026-11-22 过**（他们在 VM 里真静默装了一遍），
-  等于把 Silent 开关、machine 作用域和 `ProductCode` 识别一起验了，别再回头猜要不要加 `InstallerSuccessExitCodes`。
-  `ProductCode` 填的是 `.iss` 里 `AppId` 那个 GUID，**但清单里要连大括号带 Inno 的 `_is1` 后缀整串写**
-  （`"{7A3C1E58-…}_is1"`，跟装机键 `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{7A3C1E58-…}_is1` 的名字一模一样）。
-  2026-11-22 拿本机已装的 1.1.3 用 `winget upgrade --manifest` 做了三向对照：裸 GUID 和 `{GUID}` 都报
-  「No installed package found matching input criteria」，只有 `{GUID}_is1` 回「No available upgrade found」——
-  也就是前两种写法下 winget 根本看不见这台机器装过它，`winget upgrade` 以后就不会提示升级，等于白做这条链路。
-  本地清单要先开一次 `winget settings --enable LocalManifestFiles`（管理员），否则 `--manifest` 直接被拒。
-  **AppId 改了升级识别就断**，这条跟 `.iss` 顶上那句注释是同一件事。安装包只有 win-x64 一个产物，清单里就只挂 x64，别给 arm64 凑一条。
-- **发版时那份清单由 `installer\winget-submit.sh` 自动出**：`release.yml` 建完 Release 多一步调它，脚本拿上一版目录当模板
-  生成新版本目录（临时目录里生成，不碰工作树），填 `PackageVersion`、直链里的 `v<版本>` 与文件名、digest 转大写的
-  `InstallerSha256`、Release 的 `published_at` 当 `ReleaseDate`，然后用 GitHub API 建 fork、开分支、四份文件 PUT 上去、
-  开 PR，最后把同样四份回写本仓库 main。要的东西：一个 **`WINGET_PAT` secret**（能推自己的 `winget-pkgs` fork 并在
-  `microsoft/winget-pkgs` 开 PR，classic PAT 给 `repo` 最省事），没配就打印生成结果跳过提交，发版本身仍旧成功。
-  上游默认分支是 `master`，别写 `main`；标题按上游有没有这个包目录分「New package:」/「Update: … to …」两种。
-  分支名是 `submit-<包>-<版本>`，重跑同一个 tag 时 `gh pr create` 会撞已存在的 PR，脚本认那条旧的、照旧退 0，
-  别让它把整个发版判失败。**手动提交的那次分支叫 `new-bobvan9.BobIme-1.1.3`**，跟脚本的命名不同，
-  所以万一要重跑 1.1.3 得留意上游会拦第二个同版本 PR。
-  本地空跑：`WINGET_OUT=<临时目录> WINGET_SHA=<64 个字符> WINGET_DATE=2026-01-01 bash installer\winget-submit.sh 1.9.9`，
-  带这三个变量就不会去碰网络。**想单验令牌**就跑 Actions 里的「验 winget 令牌」（`.github\workflows\winget-check.yml`，
-  它只多设一个 `WINGET_CHECK=1`，脚本在验完账号和 fork 写权限之后就退，建分支/PUT/开 PR/回写一步都不走）；
-  版本号填一个已经发过版的，因为填哈希要从那个 Release 附件读 digest。
-  **runner 上 `gh` 没有 token 会直接拒跑（exit 4）**，脚本开头读 digest 就撞上，所以两条工作流都必须传
-  `GITHUB_TOKEN`——这条是 2026-11-22 首跑手动检查时跑红的才发现的。检查跑通过的结论：令牌认得出 `bobvan9`、
-  `bobvan9/winget-pkgs` 的 `permissions.push` 是 `true`、runner 上生成的清单三处值与本地逐字一致。`sed` 填哈希那条别拿 `^` 锚——`InstallerSha256` 在 `Installers:` 条目下面是缩进的，
-  锚死了静默不替换，脚本末尾加了一条 grep 兜底。
-  取哈希那两条 `gh api` 拿 1.1.3 真跑过一遍，生成结果和仓库里那份副本逐字节一致；没配 `WINGET_PAT` 时脚本只打印跳过、
-  退 0，发版照旧成功。脚本本身在 `.gitattributes` 里是 `*.sh eol=lf`，别让它带 CRLF，否则 runner 上 bash 会当场崩。
+- **winget 那条链路 2026-11-24 撤了，发版只走 GitHub Releases**：新包首次提交要微软维护者人工批准，
+  1.1.3–1.1.8 六条 PR 全卡在同一个审核前面，上游 `manifests/b/bobvan9/BobIme` 至今不存在，
+  `winget install bobvan9.BobIme` 其实装不到东西，代价却是每次 tag 多开一条 fork 分支、一条 PR、再往 main 回写四个清单文件。
+  撤掉的是 `release.yml` 最后那步、`installer/winget-submit.sh`、`installer/winget/` 那套清单和
+  `.github/workflows/winget-check.yml`；托盘「检查更新」读的是 Releases API，跟这条链路无关，没受影响。
+  真要上架就从上游仓库手动提一次新包 PR，批下来以后再考虑把自动提交加回来。
 - 现在是 `PrivilegesRequired=admin` 的全用户安装，默认目录 `C:\Program Files\BobIme`（要写系统目录，
   所以安装和升级都会弹一次 UAC）；开机自启写 HKLM 的 `Run` 项，对所有登录用户生效。
   安装时会顺手删掉早先按用户安装留下的 HKCU `Run` 项，免得登录后拉起两份进程挂两个钩子。
