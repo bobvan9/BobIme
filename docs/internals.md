@@ -373,7 +373,9 @@ src/BobIme.Shell/bin/Debug/net10.0-windows/BobIme.Shell.exe           # 常驻�
   1.1.3–1.1.8 六条 PR 全卡在同一个审核前面，上游 `manifests/b/bobvan9/BobIme` 至今不存在，
   `winget install bobvan9.BobIme` 其实装不到东西，代价却是每次 tag 多开一条 fork 分支、一条 PR、再往 main 回写四个清单文件。
   撤掉的是 `release.yml` 最后那步、`installer/winget-submit.sh`、`installer/winget/` 那套清单和
-  `.github/workflows/winget-check.yml`；托盘「检查更新」读的是 Releases API，跟这条链路无关，没受影响。
+  `.github/workflows/winget-check.yml`，仓库 secret `WINGET_PAT` 一并删掉——现在这个仓库没有任何 Actions secret，
+  推 tag 出包用不上它们；当年那个 PAT 本身还挂在账号的 tokens 页上，要作废得自己去撤。
+  托盘「检查更新」读的是 Releases API，跟这条链路无关，没受影响。
   真要上架就从上游仓库手动提一次新包 PR，批下来以后再考虑把自动提交加回来。
 - 现在是 `PrivilegesRequired=admin` 的全用户安装，默认目录 `C:\Program Files\BobIme`（要写系统目录，
   所以安装和升级都会弹一次 UAC）；开机自启写 HKLM 的 `Run` 项，对所有登录用户生效。
