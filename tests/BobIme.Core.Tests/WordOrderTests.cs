@@ -28,7 +28,7 @@ public class WordOrderTests
         new("想", "xiang", 7, 50),
         new("手机", "shouji", 8, 5));
 
-    /// <summary>拼音词频把「规范」顶在第一席，gui 自己的全码词散在第 2、4 席——真词库 gui 就是这样。</summary>
+    /// <summary>拼音整列单字先出，gui 自己的字占前两席；更长编码的词组退到单字之后——真词库 gui 就是这样。</summary>
     private static CodeTable GuiTable() => Pinyin(
         new("规范", "guifan", 1, 500),
         new("鬼", "gui", 2, 300),
@@ -39,7 +39,7 @@ public class WordOrderTests
     public void Rule_HoistsTheCompletedPinyinCodeAboveOtherCodes()
     {
         var table = GuiTable();
-        Assert.Equal(["规范", "鬼", "规定", "贵"], table.Query("gui").Select(c => c.Text));
+        Assert.Equal(["鬼", "贵", "规范", "规定"], table.Query("gui").Select(c => c.Text));
 
         table.WordOrders = [new WordOrder("gui", ["贵", "鬼"])];
         Assert.Equal(["贵", "鬼", "规范", "规定"], table.Query("gui").Select(c => c.Text));
@@ -57,11 +57,18 @@ public class WordOrderTests
     [Fact]
     public void Rule_KeepsOtherCodesInTheOldOrderWhileTheCodeIsNotComplete()
     {
-        // 只敲到 gu：gui 的词还在自己原来的席位上互换，规范 仍旧排在最前。
-        var table = GuiTable();
+        // 只敲到 gu：gui 的两个字还在自己那两席里互换，越不过词频更高的「国」。
+        var table = Pinyin(
+            new("国", "guo", 1, 900),
+            new("规范", "guifan", 2, 500),
+            new("鬼", "gui", 3, 300),
+            new("贵", "gui", 4, 100));
         table.WordOrders = [new WordOrder("gui", ["贵", "鬼"])];
 
-        Assert.Equal(["规范", "贵", "规定", "鬼"], table.Query("gu").Select(c => c.Text));
+        Assert.Equal(["国", "贵", "鬼", "规范"], table.Query("gu").Select(c => c.Text));
+
+        // 敲满 gui 之后整组上提，才谈得上一越而过。
+        Assert.Equal(["贵", "鬼", "规范"], table.Query("gui").Select(c => c.Text));
     }
 
     [Fact]
@@ -118,25 +125,39 @@ public class WordOrderTests
     }
 
     [Fact]
-    public void RealDict_PromotesTheWordTheBaseTableRanksSecond()
+    public void RealDict_PromotesThePhraseBackAboveTheSingleChar()
     {
-        // qqqq 在极点原表里是「狗狗」在前、「金」在后，正是用户要反过来那一例。
+        // 整列单字先出之后 qqqq 默认是「金」在前，登记过序的词要能再翻回「狗狗」。
         var table = CodeTableLoader.LoadFromFile(TestDict.DictPath("jidian86.tsv"));
-        Assert.Equal(["狗狗", "金"], table.Query("qqqq").Select(c => c.Text).Take(2));
+        Assert.Equal(["金", "狗狗"], table.Query("qqqq").Select(c => c.Text).Take(2));
 
-        table.WordOrders = [new WordOrder("qqqq", ["金", "狗狗"])];
-        Assert.Equal("金", table.Query("qqqq")[0].Text);
+        table.WordOrders = [new WordOrder("qqqq", ["狗狗", "金"])];
+        Assert.Equal("狗狗", table.Query("qqqq")[0].Text);
     }
 
     [Fact]
-    public void RealPinyinDict_PutsTheOrderedWordAheadOfTheFrequencyLeader()
+    public void RealPinyinDict_PutsTheOrderedWordAheadOfTheBaseLeader()
     {
-        // 真拼音表里 gui 的头席是词频更高的「规范」，调过序的词要能整组越过它。
+        // 真拼音表里 gui 的头席现在是单字中词频最高的「鬼」，登记过序的词照样换得下来。
         var table = CodeTableLoader.LoadFromFile(TestDict.DictPath("pinyin_base.tsv"), CodeTableFormat.Pinyin);
-        Assert.Equal("规范", table.Query("gui")[0].Text);
+        Assert.Equal("鬼", table.Query("gui")[0].Text);
 
         table.WordOrders = [new WordOrder("gui", ["贵"])];
         Assert.Equal("贵", table.Query("gui")[0].Text);
+    }
+
+    [Fact]
+    public void Rule_HoistsAPinyinPhraseBackAboveTheSingleChars()
+    {
+        // 极少数拼音编码字和词同码（tuan、kuai 那批）：调过序的词要压得过同码的单字。
+        var table = Pinyin(
+            new("团", "tuan", 1, 900),
+            new("团子", "tuan", 2, 100),
+            new("湍", "tuan", 3, 500));
+        Assert.Equal(["团", "湍", "团子"], table.Query("tuan").Select(c => c.Text));
+
+        table.WordOrders = [new WordOrder("tuan", ["团子"])];
+        Assert.Equal(["团子", "团", "湍"], table.Query("tuan").Select(c => c.Text));
     }
 
     [Fact]
@@ -247,11 +268,11 @@ public class WordOrderTests
     {
         var engine = new ImeEngine([WubiTable(), PinyinTable()])
         {
-            WubiWordOrders = [new WordOrder("qqqq", ["金", "狗狗"])],
+            WubiWordOrders = [new WordOrder("qqqq", ["狗狗", "金"])],
             PinyinWordOrders = [new WordOrder("shi", ["时", "是"])],
         };
 
-        Assert.Equal("金", engine.Peek("qqqq", CandidateSource.Wubi)[0].Text);
+        Assert.Equal("狗狗", engine.Peek("qqqq", CandidateSource.Wubi)[0].Text);
         Assert.Equal("时", engine.Peek("sh", CandidateSource.Pinyin)[0].Text);
     }
 
@@ -260,19 +281,20 @@ public class WordOrderTests
     {
         var engine = new ImeEngine([WubiTable(), PinyinTable()])
         {
-            WubiWordOrders = [new WordOrder("qqqq", ["金", "狗狗"])],
+            WubiWordOrders = [new WordOrder("qqqq", ["狗狗", "金"])],
             PinyinWordOrders = [new WordOrder("shi", ["时", "是"])],
         };
         engine.WubiWordOrders = [];
 
-        Assert.Equal("狗狗", engine.Peek("qqqq", CandidateSource.Wubi)[0].Text);
+        // 五笔那套清空后退回码表本来的次序：单字先出，词组接在后面。
+        Assert.Equal("金", engine.Peek("qqqq", CandidateSource.Wubi)[0].Text);
         Assert.Equal("时", engine.Peek("sh", CandidateSource.Pinyin)[0].Text);
     }
 
     [Fact]
     public void WubiRule_LeavesTheSamePinyinCodeAlone()
     {
-        // 两边都有 gui 这条码：五笔那套规则只挪五笔的词，拼音那边照词频出，反过也一样。
+        // 两边都有 gui 这条码：五笔那套规则只挪五笔的词，拼音那边照单字先出，反过也一样。
         var engine = new ImeEngine([WubiGuiTable(), GuiTable()])
         {
             WubiWordOrders = [new WordOrder("gui", ["工"])],

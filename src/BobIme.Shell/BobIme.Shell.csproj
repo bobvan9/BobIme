@@ -17,7 +17,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
     <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
-    <Version>1.1.9</Version>
+    <Version>1.1.10</Version>
     <Product>Bob 五笔</Product>
     <Company>Bob</Company>
     <Copyright>© Bob</Copyright>

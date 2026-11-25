@@ -29,7 +29,7 @@ public sealed record WordOrder(string Code, string[] Words)
     /// <summary>
     /// 按规则重排候选，<paramref name="code"/> 是这次查的编码，<paramref name="source"/> 是这套规则管的那一侧码表。
     /// 编码正好敲满某条规则时，那个编码的词整组提到最前、组内按登记的次序；
-    /// 其余规则只挪动自己编码原本占的席位，所以简码先出、拼音词频这些整体次序一概不动。
+    /// 其余规则只挪动自己编码原本占的席位，所以单字先出、简码先出、拼音词频这些整体次序一概不动。
     /// 只有和 <paramref name="source"/> 同一侧的候选才可能被挪动，五笔的规则碰不到拼音的候选，反过也一样。
     /// </summary>
     public static IReadOnlyList<Candidate> Apply(

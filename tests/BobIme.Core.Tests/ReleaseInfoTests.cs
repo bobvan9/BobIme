@@ -36,6 +36,7 @@ public class ReleaseInfoTests
     [InlineData("v1.1.4", "1.1.4", 0)]
     [InlineData("1.1.4", "1.1.5", -1)]
     [InlineData("1.10", "1.9", 1)]
+    [InlineData("v1.1.10", "1.1.9", 1)]
     [InlineData("1.2", "1.2.0", 0)]
     [InlineData("2.0", "1.99.99", 1)]
     [InlineData("1.1.4", "1.1.4.1", -1)]

@@ -86,8 +86,10 @@ public class CodeTableLoaderTests
 
         Assert.Equal(2, table.Count);
         Assert.Equal(CandidateSource.Pinyin, table.Source);
-        Assert.Equal(["中国", "中"], table.Query("zhong").Select(c => c.Text));
-        Assert.Equal(400_000, table.Query("zhong")[0].Weight);
+        // 单字先出，但权重列照读：中国 那条的词频仍旧是 400000，只是席位退到 中 后面。
+        Assert.Equal(["中", "中国"], table.Query("zhong").Select(c => c.Text));
+        Assert.Equal(200_000, table.Query("zhong")[0].Weight);
+        Assert.Equal(400_000, table.Query("zhong")[1].Weight);
     }
 
     [Fact]

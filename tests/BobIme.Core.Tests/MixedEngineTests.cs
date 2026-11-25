@@ -45,7 +45,7 @@ public class MixedEngineTests
     {
         var candidates = Type("zhong");
 
-        Assert.Equal(["中国", "种过", "中"], candidates.Select(c => c.Text));
+        Assert.Equal(["中", "中国", "种过"], candidates.Select(c => c.Text));
         Assert.All(candidates, c => Assert.Equal(CandidateSource.Pinyin, c.Source));
     }
 

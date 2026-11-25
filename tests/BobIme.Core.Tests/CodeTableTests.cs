@@ -17,6 +17,54 @@ public class CodeTableTests
         Assert.Equal(["阵", "除", "队"], Table.Query("bl").Select(c => c.Text));
 
     [Fact]
+    public void Query_PutsSingleCharsAheadOfPhrasesOfTheSameCode()
+    {
+        // 极点原表 qqqq 把「狗狗」写在「金」前面，同码那一趟要反过来。
+        var table = WubiTable([new("狗狗", "qqqq", 1), new("金", "qqqq", 2)]);
+
+        Assert.Equal(["金", "狗狗"], table.Query("qqqq").Select(c => c.Text));
+    }
+
+    [Fact]
+    public void Query_KeepsShortCodeFirstWithinTheSingleCharPass()
+    {
+        // 单字这一遍仍旧按码长由短到长，简码先出没有被词组挤掉。
+        var table = WubiTable([new("语", "yyyy", 1), new("言", "y", 2), new("语言", "yy", 3)]);
+
+        Assert.Equal(["言", "语", "语言"], table.Query("y").Select(c => c.Text));
+    }
+
+    [Fact]
+    public void Query_CountsAnAstralCharAsASingleChar()
+    {
+        // 增补平面的字一个写成一对代理，长度是 2 却仍是单字，不能归到词组那一遍。
+        var astral = char.ConvertFromUtf32(0x20000);
+        var table = WubiTable([new("中国", "aaaa", 1), new(astral, "aaab", 2)]);
+
+        Assert.Equal([astral, "中国"], table.Query("a").Select(c => c.Text));
+    }
+
+    [Fact]
+    public void Query_LimitCutsInsideTheSingleCharPass()
+    {
+        // 取一页就只从单字里取，词组不会因为原本排在前面而占掉席位。
+        var table = WubiTable([new("狗狗", "qqqq", 1), new("金", "qqqq", 2), new("淾", "qqqq", 3)]);
+
+        Assert.Equal(["金", "淾"], table.Query("qqqq", 2).Select(c => c.Text));
+    }
+
+    [Fact]
+    public void Query_PreservesTheOrderInsideEachPass() =>
+        // 两遍各自维持原本那一套次序：单字仍按码长再按编码，词组接在后面照同样的次序。
+        Assert.Equal(["全", "金", "狗狗", "珠联璧合"], WubiTable([
+            new("狗狗", "qqqq", 1), new("金", "qqqq", 2), new("全", "qqqk", 3), new("珠联璧合", "qqqq", 4),
+        ]).Query("qqq").Select(c => c.Text));
+
+    private static CodeTable WubiTable(params Candidate[] entries) => new(entries);
+
+    private static CodeTable PinyinTable(params Candidate[] entries) => new(entries, CodeTableFormat.Pinyin);
+
+    [Fact]
     public void Query_RespectsLimit() => Assert.Equal(2, Table.Query("a", 2).Count);
 
     [Theory]
@@ -35,6 +83,35 @@ public class CodeTableTests
     [Fact]
     public void PinyinQuery_OrdersAcrossCodeLengthsByWeight() =>
         Assert.Equal(["是", "说", "时", "上", "少", "手机"], TestDict.SyntheticPinyin.Query("sh").Select(c => c.Text));
+
+    [Fact]
+    public void PinyinQuery_PutsSingleCharsAheadOfHigherWeightPhrases()
+    {
+        // 规范 词频最高，可它是词组：单字那一遍走完才轮到它。
+        var table = PinyinTable(
+            new("规范", "guifan", 1, 500),
+            new("鬼", "gui", 2, 300),
+            new("贵", "gui", 3, 100));
+
+        Assert.Equal(["鬼", "贵", "规范"], table.Query("gui").Select(c => c.Text));
+    }
+
+    [Fact]
+    public void PinyinQuery_KeepsWeightOrderWithinThePhrasePass() =>
+        Assert.Equal(["鬼", "规范", "规定"], PinyinTable([
+            new("规定", "guiding", 1, 200), new("规范", "guifan", 2, 500), new("鬼", "gui", 3, 300),
+        ]).Query("gui").Select(c => c.Text));
+
+    [Fact]
+    public void PinyinQuery_LimitCutsInsideTheSingleCharPass()
+    {
+        var table = PinyinTable(
+            new("规范", "guifan", 1, 500),
+            new("鬼", "gui", 2, 300),
+            new("贵", "gui", 3, 100));
+
+        Assert.Equal(["鬼"], table.Query("gui", 1).Select(c => c.Text));
+    }
 
     [Fact]
     public void PinyinQuery_ReadsOnlyThePrefixBucket() =>
@@ -68,6 +145,30 @@ public class CodeTableTests
 
     [Fact]
     public void RealPinyin_HighestWeightComesFirst() => Assert.Equal("的", TestDict.Pinyin.Query("de")[0].Text);
+
+    [Fact]
+    public void RealPinyin_SingleCharsLeadEveryPhraseOfAPrefix()
+    {
+        // 真表里 gui 的头席原本是词频最高的 规范，现在要让单字先走完一整遍。
+        var hits = TestDict.Pinyin.Query("gui");
+
+        Assert.NotEmpty(hits);
+        Assert.False(IsPhrase(hits[0]));
+        Assert.All(hits.SkipWhile(c => !IsPhrase(c)), c => Assert.True(IsPhrase(c)));
+    }
+
+    [Fact]
+    public void RealDict_SingleCharsLeadEveryPhraseOfAPrefix()
+    {
+        var hits = TestDict.Table.Query("qqq");
+
+        Assert.NotEmpty(hits);
+        Assert.False(IsPhrase(hits[0]));
+        Assert.All(hits.SkipWhile(c => !IsPhrase(c)), c => Assert.True(IsPhrase(c)));
+    }
+
+    /// <summary>码表意义上的词组：不止一个字符。增补平面的字写成一代理对，这里算一个字符。</summary>
+    private static bool IsPhrase(Candidate candidate) => candidate.Text.EnumerateRunes().Count() > 1;
 
     [Theory]
     [InlineData("k", "中")]

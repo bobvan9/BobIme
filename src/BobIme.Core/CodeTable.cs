@@ -2,6 +2,7 @@ namespace BobIme.Core;
 
 /// <summary>
 /// 码表的读法：五笔按码长分带查（简码先出），拼音按首字母分桶、桶内词频降序查（高频词先出）。
+/// 两本都是单字先出：词组一律排在所有单字之后，各自维持原本那一套次序。
 /// </summary>
 public sealed record CodeTableFormat(int MaxCodeLength, CandidateSource Source, bool RankByWeight)
 {
@@ -91,29 +92,41 @@ public sealed class CodeTable
             Format.RankByWeight ? QueryByWeight(prefix, limit) : QueryByBand(prefix, limit), WordOrders, prefix, Source);
     }
 
-    /// <summary>分带查：先本码长，再逐级放长，靠二分定位起点。</summary>
+    /// <summary>
+    /// 分带查：单字先出，两遍各自维持原本的次序——第一遍只收单字、仍按码长由短到长，
+    /// 所以简码先出这条还在；第二遍才把词组接在后面。
+    /// </summary>
     private IReadOnlyList<Candidate> QueryByBand(string prefix, int limit)
     {
         var result = new List<Candidate>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        for (var len = prefix.Length; len <= MaxCodeLength; len++)
+        for (var pass = 0; pass < 2; pass++)
         {
-            var band = _bands[len];
-            for (var i = LowerBound(band, prefix); i < band.Length; i++)
+            var wantSingle = pass == 0;
+            for (var len = prefix.Length; len <= MaxCodeLength; len++)
             {
-                var candidate = band[i];
-                if (!candidate.Code.StartsWith(prefix, StringComparison.Ordinal))
+                var band = _bands[len];
+                for (var i = LowerBound(band, prefix); i < band.Length; i++)
                 {
-                    break;
-                }
-
-                if (seen.Add(candidate.Text))
-                {
-                    result.Add(candidate);
-                    if (result.Count >= limit)
+                    var candidate = band[i];
+                    if (!candidate.Code.StartsWith(prefix, StringComparison.Ordinal))
                     {
-                        return result;
+                        break;
+                    }
+
+                    if (IsSingleChar(candidate.Text) != wantSingle)
+                    {
+                        continue;
+                    }
+
+                    if (seen.Add(candidate.Text))
+                    {
+                        result.Add(candidate);
+                        if (result.Count >= limit)
+                        {
+                            return result;
+                        }
                     }
                 }
             }
@@ -122,7 +135,7 @@ public sealed class CodeTable
         return result;
     }
 
-    /// <summary>按词频查：只扫前缀首字母那一桶，桶内从高频往低走，够一页就停。</summary>
+    /// <summary>按词频查：只扫前缀首字母那一桶，桶内从高频往低走；同样先扫单字一遍、再扫词组一遍。</summary>
     private IReadOnlyList<Candidate> QueryByWeight(string prefix, int limit)
     {
         // 加载器把编码统一成小写字母，所以非小写开头的前缀必然没有命中。
@@ -135,17 +148,34 @@ public sealed class CodeTable
         var result = new List<Candidate>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        for (var i = 0; i < bucket.Length && result.Count < limit; i++)
+        for (var pass = 0; pass < 2; pass++)
         {
-            var candidate = bucket[i];
-            if (candidate.Code.StartsWith(prefix, StringComparison.Ordinal) && seen.Add(candidate.Text))
+            var wantSingle = pass == 0;
+            for (var i = 0; i < bucket.Length && result.Count < limit; i++)
             {
-                result.Add(candidate);
+                var candidate = bucket[i];
+                if (!candidate.Code.StartsWith(prefix, StringComparison.Ordinal)
+                    || IsSingleChar(candidate.Text) != wantSingle)
+                {
+                    continue;
+                }
+
+                if (seen.Add(candidate.Text))
+                {
+                    result.Add(candidate);
+                }
             }
         }
 
         return result;
     }
+
+    /// <summary>
+    /// 单字的判据是「一个字符」：词库里有落在辅助平面的生僻字，一个字符写成一对代理，
+    /// 光看 <see cref="string.Length"/> 会把它们错分成词组。
+    /// </summary>
+    private static bool IsSingleChar(string text) =>
+        text.Length == 1 || (text.Length == 2 && char.IsHighSurrogate(text[0]) && char.IsLowSurrogate(text[1]));
 
     private static int LowerBound(Candidate[] band, string prefix)
     {
