@@ -5,6 +5,7 @@ namespace BobIme.Shell;
 /// <summary>
 /// 「关于」里那条「检查更新」的全部界面动作：查一次、按结果说一句、要下载就开下载页。
 /// 入口只有那一个链接，所以防重入也收在这儿——检查期间整张窗口挂沙漏，再点不发第二个请求。
+/// 开浏览器这一步也收在这儿给「打开主页」共用，「关于」里就这两条链接。
 /// </summary>
 internal static class UpdateFlow
 {
@@ -55,14 +56,15 @@ internal static class UpdateFlow
                         MessageBoxButtons.YesNo,
                         MessageBoxIcon.Information) == DialogResult.Yes)
                 {
-                    OpenDownloadPage(owner, result.Url);
+                    OpenInBrowser(owner, result.Url, CheckLabel);
                 }
 
                 break;
         }
     }
 
-    private static void OpenDownloadPage(Form owner, string url)
+    /// <summary>叫系统默认的浏览器开一个地址；开不成只说一句，把地址原样留在框里给人复制。</summary>
+    internal static void OpenInBrowser(Form owner, string url, string caption)
     {
         try
         {
@@ -70,7 +72,7 @@ internal static class UpdateFlow
         }
         catch (Exception ex)
         {
-            MessageBox.Show(owner, $"没能叫浏览器打开：{ex.Message}\n下载地址：{url}", CheckLabel);
+            MessageBox.Show(owner, $"没能叫浏览器打开：{ex.Message}\n地址：{url}", caption);
         }
     }
 }

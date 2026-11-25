@@ -11,13 +11,28 @@ internal sealed record InfoSection(string Title, InfoRow[] Rows);
 /// <summary>托盘「说明」和「关于」的文本内容。</summary>
 internal static class TrayDialogs
 {
+    /// <summary>「打开主页」这条链接要去的地址，就是这个项目在 GitHub 上的主页。</summary>
+    private const string HomeUrl = "https://github.com/bobvan9/BobIme";
+
+    private const string HomeLabel = "打开主页";
+
     public static void ShowUsage() => Show("Bob 五笔 使用说明", Usage(), new Size(640, 560));
 
     public static void ShowAbout()
     {
-        // 版本号后面那个链接是整个程序唯一的一处联网入口，动作全在 UpdateFlow 里。
+        // 版本号后面那个链接是整个程序唯一的一处联网，动作全在 UpdateFlow 里；主页那条只是叫浏览器开一下。
         using var dialog = new TextDialog("关于 Bob 五笔", About(), new Size(540, 260));
-        dialog.OnLink = label => _ = UpdateFlow.RunAsync(dialog, label);
+        dialog.OnLink = label =>
+        {
+            if (label == UpdateFlow.CheckLabel)
+            {
+                _ = UpdateFlow.RunAsync(dialog, label);
+            }
+            else
+            {
+                UpdateFlow.OpenInBrowser(dialog, HomeUrl, HomeLabel);
+            }
+        };
         dialog.ShowDialog();
     }
 
@@ -55,6 +70,7 @@ internal static class TrayDialogs
         }
 
         rows.Add(new InfoRow("程序目录", AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar)));
+        rows.Add(new InfoRow("主页", HomeUrl, HomeLabel));
 
         return [new InfoSection("版本信息", [.. rows])];
     }
@@ -65,7 +81,7 @@ internal static class TrayDialogs
         [
             new InfoRow("词库直查", "按编码直接检索词库，不做字根拆分。"),
             new InfoRow("后台常驻", "以全局键盘钩子实现，不注册为系统输入法，输入状态由托盘图标确认。"),
-            new InfoRow("联网范围", "打字用的词库、配置、候选全在本地，没有云输入、不上报。唯一的一处联网是「关于」窗口里版本号后面的「检查更新」：点一下才发一次 HTTPS 请求，只读 GitHub 上最新一版的标签，不带任何本机信息，也不下载、不自动安装。"),
+            new InfoRow("联网范围", "打字用的词库、配置、候选全在本地，没有云输入、不上报。唯一的一处联网是「关于」窗口里版本号后面的「检查更新」：点一下才发一次 HTTPS 请求，只读 GitHub 上最新一版的标签，不带任何本机信息，也不下载、不自动安装。「关于」里还有一条「打开主页」，那只是叫浏览器打开项目主页，本程序不发请求。"),
         ]),
         new("模式与开关",
         [
